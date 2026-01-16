@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>GuestXP Tv</title>
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Fonts -->
+    <link
+      rel="preload"
+      href="./css/fonts/lufga_regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/lufga_medium.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/lufga_semi_bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/lufga_bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/fontsMono/SpaceMono-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/fontsMono/SpaceMono-Italic.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/fontsMono/SpaceMono-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./css/fonts/fontsMono/SpaceMono-BoldItalic.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    <script
+      type="text/javascript"
+      src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+    ></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+    <script type="text/javascript" src="env.js"></script>
+
+    <!-- <script type="text/javascript" src="javascript/debugOverlay.js"></script> -->
+    <script type="text/javascript" src="javascript/debugOverlay.js"></script>
+    <script>
+      var fileJS = document.createElement("script");
+      fileJS.setAttribute("type", "text/javascript");
+      var fileName = "javascript/index.js";
+      fileJS.setAttribute("src", fileName);
+      if (typeof fileJS != "undefined")
+        document.getElementsByTagName("head")[0].appendChild(fileJS);
+    </script>
+    <style type="text/css">
+      .loadNot {
+        background: #ccc;
+        text-align: center;
+        width: 75%;
+        margin-left: 6%;
+        font-size: 30px;
+        padding-left: 120px;
+        padding-right: 120px;
+        padding-top: 60px;
+        padding-bottom: 60px;
+        margin-top: 21%;
+      }
+
+      .cssload-container {
+        position: fixed;
+        left: 0;
+        right: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="mainContent"></div>
+    <div id="menusWrapper"></div>
+    <div id="popUpFDFS"></div>
+    <div id="customMessage"></div>
+    <div
+      id="loading"
+      class="cssload-container loader-bg"
+      style="display: none; z-index: 9999"
+    >
+      <div id="loadingImg">
+        <img src="images/loader.png" class="imgLoader" />
+      </div>
+    </div>
+    <div
+      class="popup-overlay"
+      id="loadingPopup"
+      aria-live="polite"
+      aria-busy="true"
+      style="display: none; z-index: 9999"
+    >
+      <div class="popup-box">
+        <div class="lottie-wrap" id="lottieContainer"></div>
+        <div class="wait-text">Please wait…</div>
+      </div>
+    </div>
+    <!-- spare dives -->
+    <div id="genericDiv1"></div>
+    <div id="genericDiv2"></div>
+    <div id="genericDiv3"></div>
+    <div id="genericDiv4"></div>
+  </body>
+</html>

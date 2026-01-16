@@ -1,0 +1,2 @@
+# Environment files (sensitive data - API keys, secrets, etc)
+**/env.js

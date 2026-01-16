@@ -1,0 +1,66 @@
+{
+    "files": [
+        {
+            "FileName": "javascript/navigation.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName":"javascript/checkoutManage.js",
+            "VersionNo":0.1
+        },
+        {
+            "FileName": "javascript/pages.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "css/normal.css",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "css/styles.css",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "css/respons.css",
+            "VersionNo": 0.1
+        },
+         {
+            "FileName":"javascript/qrcode.min.js",
+            "VersionNo":0.1	
+        },
+        {
+            "FileName": "javascript/appconfig.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName":"javascript/hcap.js",
+            "VersionNo":0.1	
+        },
+        {
+            "FileName":"javascript/idcap.js",
+            "VersionNo":0.1	
+        },
+        {
+            "FileName":"javascript/indexDbCacheImages.js",
+            "VersionNo":0.1	
+        },
+        {
+            "FileName": "https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/mqtt-client.js",
+            "VersionNo": 0.1
+        }
+    ],
+    "mainFiles": [
+        {
+            "FileName": "javascript/main.js",
+            "VersionNo": 0.1
+        }
+    ]
+}

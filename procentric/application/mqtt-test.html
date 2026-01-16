@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head><title>MQTT Test</title></head>
+<body>
+<h2>MQTT Test Publisher</h2>
+<button onclick="connect()">Connect</button>
+<button onclick="publish()">Publish Test Message</button>
+<pre id="log"></pre>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+<script>
+var client;
+var log = document.getElementById('log');
+
+function addLog(msg) {
+  log.textContent += msg + '\n';
+  console.log(msg);
+}
+
+function connect() {
+  var clientId = 'web_test_' + Date.now();
+  addLog('Creating client: ' + clientId);
+  
+  client = new Paho.MQTT.Client('rs232.cloudext.co', 8084, '/mqtt', clientId);
+  
+  client.onConnectionLost = function(res) {
+    addLog('❌ Connection Lost: ' + res.errorMessage);
+  };
+  
+  client.onMessageArrived = function(msg) {
+    addLog('📨 Message: ' + msg.payloadString);
+  };
+  
+  var options = {
+    useSSL: true,
+    userName: 'GRE-373951',
+    password: 'CZ^#8L80Z%tU',  // ⚠️ PUT REAL PASSWORD
+    timeout: 10,
+    keepAliveInterval: 60,
+    cleanSession: true,
+    mqttVersion: 4,
+    onSuccess: function() {
+      addLog('✅ Connected successfully!');
+    },
+    onFailure: function(err) {
+      addLog('❌ Connection failed: ' + err.errorMessage);
+      addLog('Error code: ' + err.errorCode);
+    }
+  };
+  
+  addLog('Connecting to rs232.cloudext.co:8084/mqtt...');
+  client.connect(options);
+}
+
+function publish() {
+  if (!client || !client.isConnected()) {
+    addLog('⚠️ Not connected! Click Connect first.');
+    return;
+  }
+  
+  var payload = JSON.stringify({
+    cmd: 'ping',
+    seq: '12345'
+  });
+  
+  var message = new Paho.MQTT.Message(payload);
+  message.destinationName = 'GRE/1cf43ff843b4/CMD';
+  message.qos = 1;
+  
+  client.send(message);
+  addLog('📤 Published to GRE/1cf43ff843b4/CMD');
+}
+</script>
+</body>
+</html>
