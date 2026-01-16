@@ -1182,13 +1182,19 @@ Navigation.closeTvGuide = function() {
   ));
   macro('#mainContent').show();
   
-  // 🔥 FIX 3: Show overlay IMMEDIATELY after rendering (video is already playing)
-  // Wait 500ms to ensure DOM is ready, then show overlay
-  setTimeout(function() {
-    var overlay = macro(".lg-tv-overlay");
-    if (overlay.length) {
-      overlay.css('display', 'flex'); // Show overlay
-      overlay.css('bottom', '44px'); // Ensure correct position
+  // FIXED: Hide overlay initially to prevent visible jump, then show in correct position
+  var overlay = macro(".lg-tv-overlay");
+  if (overlay.length) {
+    // Step 1: Immediately hide overlay (invisible but positioned correctly)
+    overlay.css({
+      'opacity': '0',
+      'bottom': '44px',
+      'display': 'flex'
+    });
+    
+    // Step 2: On next frame, make it visible (already in correct position)
+    requestAnimationFrame(function() {
+      overlay.css('opacity', '1');
       
       // Auto-hide after 10 seconds
       setTimeout(function () {
@@ -1200,8 +1206,8 @@ Navigation.closeTvGuide = function() {
           );
         }
       }, 10000);
-    }
-  }, 500);
+    });
+  }
 };
 
 // 🔥 REPLACE WITH THIS (in Main.lgLgChannelApiMetaData):
@@ -1784,12 +1790,19 @@ Navigation.closeLiveTvGuide = function() {
   ));
   macro('#mainContent').show();
   
-  // Show overlay IMMEDIATELY after rendering
-  setTimeout(function() {
-    var overlay = macro(".live-tv-overlay");
-    if (overlay.length) {
-      overlay.css('display', 'flex');
-      overlay.css('bottom', '44px');
+  // FIXED: Hide overlay initially to prevent visible jump, then show in correct position
+  var overlay = macro(".live-tv-overlay");
+  if (overlay.length) {
+    // Step 1: Immediately hide overlay (invisible but positioned correctly)
+    overlay.css({
+      'opacity': '0',
+      'bottom': '44px',
+      'display': 'flex'
+    });
+    
+    // Step 2: On next frame, make it visible (already in correct position)
+    requestAnimationFrame(function() {
+      overlay.css('opacity', '1');
       
       // Auto-hide after 10 seconds
       setTimeout(function () {
@@ -1801,8 +1814,8 @@ Navigation.closeLiveTvGuide = function() {
           );
         }
       }, 10000);
-    }
-  }, 500);
+    });
+  }
 };
 
 // Instant scroll for initial guide display
