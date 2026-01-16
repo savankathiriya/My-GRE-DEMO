@@ -1373,7 +1373,7 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
       if(Next){
         Text += '<div class="live-tv-guide-next-cell"><div class="live-next-show-title">' + cut(Next.program_title || Next.broadcast_title || '') + '</div><div class="live-next-show-time">' + timeRange(Next.start_time, Next.end_time) + '</div></div>';
       }else {
-        Text += '<div class="live-tv-guide-now-cell"><div class="live-now-show-title">' + shortTitle + '</div></div>';
+        Text += '<div class="live-tv-guide-next-cell"><div class="live-next-show-title">' + shortTitle + '</div></div>';
       }
 
       Text += '</div>';
