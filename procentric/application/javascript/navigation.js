@@ -441,10 +441,10 @@ Navigation.homePageNavigation = function (event) {
           id: "244115188075859013", // this id i have get from the hcap document
           parameters: JSON.stringify({
             reason: "launcher",  // or "hotKey" / "boot"
-            // params: {
-            //   hotel_id: "GRE1234",
-            //   launcher_version: "1.0"  // Just for your tracking
-            // }
+            params: {
+              hotel_id: "GRE1234",
+              launcher_version: "1.0"  // Just for your tracking
+            }
           }),
           onSuccess: function(response) {
             // Main.deviceActivity("close","page","Home screen");
@@ -507,6 +507,12 @@ Navigation.homePageNavigation = function (event) {
         // Main.deviceActivity("close","page","Home screen");
         // Main.deviceActivity("open","app",source);
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
+      }
+      else if (appUrl === "Ourhotel") {
+
+      }
+      else if (appUrl === "com.fubotv.app"){
+        Main.handleFuboTVCast();
       }
 
       break;
@@ -1132,20 +1138,52 @@ Navigation.lgLgDemoPlayers = function (event) {
       case 8:
       case tvKeyCode.Return:
       case 10009: {
+        // Stop media playback
         try { 
           if (typeof stopAndClearMedia === 'function') {
             stopAndClearMedia(); 
           }
         } catch(e) {}
+
+        // Stop any intervals
+        try {
+          if (Main.lgLgchannelMetaRefreshInterval) {
+            clearInterval(Main.lgLgchannelMetaRefreshInterval);
+            Main.lgLgchannelMetaRefreshInterval = null;
+          }
+        } catch(e) {
+          console.warn('Error clearing interval:', e);
+        }
+
+        // Clear current channel and navigate back
         try {
           presentPagedetails.currentChannelId = undefined;
+          presentPagedetails.showingTvGuide = false;
           Main.previousPage(); 
-        } catch(e) {}
+        } catch(e) {
+          console.warn('Error navigating back:', e);
+        }
+
+        // Clean up overlays and UI elements
+        try {
+          macro('.lg-tv-overlay').css('display', 'none');
+          macro('.tv-guide-container').css('display', 'none');
+        } catch(e) {console.warn('Error hiding overlays:', e);}
+
+        // Reset background
+        try {
+          document.body.style.background = "#000";
+        } catch(e) {
+          console.warn('Error resetting background:', e);
+        }
+
         try {
           if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
             hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
           }
         } catch (e) {}
+
+        try { exitLiveTv(); } catch(e) {}
         break;
       }
     }
@@ -1770,10 +1808,42 @@ Navigation.demoPlayers = function (event) {
             stopAndClearMedia(); 
           }
         } catch(e) {}
+
+        // Stop any intervals
+        try {
+          if (Main.channelMetaRefreshInterval) {
+            clearInterval(Main.channelMetaRefreshInterval);
+            Main.channelMetaRefreshInterval = null;
+          }
+        } catch(e) {}
+        
+        // Clear current channel and navigate back
         try {
           presentPagedetails.currentLiveChannelId = undefined;
-          Main.previousPage(); 
+          presentPagedetails.showingLiveTvGuide = false;
+          Main.previousPage();
         } catch(e) {}
+
+        // Clean up overlays and UI elements
+        try {
+          macro('.live-tv-overlay').css('display', 'none');
+          macro('.live-tv-guide-container').css('display', 'none');
+        } catch(e) {console.warn('Error hiding overlays:', e);}
+
+        // Reset background
+        try {
+          document.body.style.background = "#000";
+        } catch(e) {
+          console.warn('Error resetting background:', e);
+        }
+
+        try {
+          if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+          }
+        } catch (e) {}
+
+        try { exitLiveTv(); } catch(e) {}
         break;
       }
     }

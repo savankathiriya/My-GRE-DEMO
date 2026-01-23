@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.120"
+	appVersion:"v1.130"
 };
 var loadFilePaths = 'macrotv.json';
 var scount = 0, mainCount = 0;

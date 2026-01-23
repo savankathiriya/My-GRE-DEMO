@@ -143,24 +143,24 @@ function ensureAppInstalled(appId, source) {
     idcap.request("idcap://application/list", {
         "parameters": { "exteraInfo": true },
         "onSuccess": function (s) {
-            var foundApp = s.list.find( function (app) {
-                return app.appId === appId;
-            });
+            // var foundApp = s.list.find( function (app) {
+            //     return app.appId === appId;
+            // });
 
-            console.log("s.list---------------->", s.list)
+            console.log("s------------------->", s);
 
-            if(foundApp) {
-                if(foundApp.installed) {
-                    console.log(" " + appId + " already installed.");
-                    // Optionally auto-launch
-                    launchApp(appId,source);
-                } else {
-                    console.log("📥 " + appId + " found but not installed, installing...");
-                    installApp(appId, source);
-                }
-            } else {
-                console.log(" " + appId + " not found in available apps.");
-            }
+            // if(foundApp) {
+            //     if(foundApp.installed) {
+            //         console.log(" " + appId + " already installed.");
+            //         // Optionally auto-launch
+            //         launchApp(appId,source);
+            //     } else {
+            //         console.log("📥 " + appId + " found but not installed, installing...");
+            //         installApp(appId, source);
+            //     }
+            // } else {
+            //     console.log(" " + appId + " not found in available apps.");
+            // }
         },
         "onFailure": function (err) {
             console.log("Failed to get app list:", err.errorMessage);
@@ -231,25 +231,6 @@ function normalizeId(value) {
     return null;
   }
   return String(value);
-}
-
-function showLoadingPopup() {
-    var el = document.getElementById("loadingPopup");
-    if(el) el.style.display = "block";
-
-    initLottieOnce();
-    if(loadingAnim && typeof loadingAnim.play === 'function') {
-        loadingAnim.play();
-    }
-}
-
-function hideLoadingPopup() {
-    var el = document.getElementById("loadingPopup");
-    if (el) el.style.display = 'none';
-
-    if (loadingAnim && typeof loadingAnim.stop === 'function') {
-        loadingAnim.stop();
-    }
 }
 
 function setTheRmsIpProperty(statusIp) {

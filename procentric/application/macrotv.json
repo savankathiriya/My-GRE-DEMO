@@ -55,6 +55,10 @@
         {
             "FileName": "javascript/mqtt-client.js",
             "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/googlecast.js",
+            "VersionNo": 0.1
         }
     ],
     "mainFiles": [

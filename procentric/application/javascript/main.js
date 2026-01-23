@@ -54,7 +54,7 @@ Main.processTrigger = function (rawEvent) {
               },
               onFailure: function (f) {
                 console.error("[POWER] powerOff failed:", f && f.errorMessage);
-              }
+    }
             });
           }
         }
@@ -65,7 +65,7 @@ Main.processTrigger = function (rawEvent) {
       rawEvent.preventDefault && rawEvent.preventDefault();
       rawEvent.stopImmediatePropagation && rawEvent.stopImmediatePropagation();
       rawEvent.stopPropagation && rawEvent.stopPropagation();
-    }
+  }
 
     return false;
   }
@@ -212,6 +212,9 @@ Main.deviceRegistrationAPi = function () {
             Main.getHomeData(function () {
 				Main.deviceProfileApi(function () {
 					Navigation.updateDownloadProgress(60);
+
+          Main.registerGoogleCastToken();
+
 					if(Main.db) {
 						try { Main.db.close(); } catch(ex) {console.log("Error closing IndexedDB:", ex)}
 						Main.db = null;
@@ -492,7 +495,12 @@ Main.renderHomePage = function (applist, textOfLang) {
   macro("#mainContent").html("");
   macro("#mainContent").html(Util.homePageHtml());
 
+  Main.ShowLoading();
   Navigation.homePageLoad(applist)
+
+  setTimeout(function () {
+    Main.HideLoading();
+  }, 7000)
   
   macro("#mainContent").show();
   // Set focus to first app
@@ -530,11 +538,8 @@ Main.deviceProfileApi = function (callback) {
 					console.warn('[RMS] No status_server_ip found in device profile');
 				}
 
-
-        console.log("called------------------------------------------------------------------------------------------->")
         // Initialize MQTT connection if settings are available
         if(Main.deviceProfile && Main.deviceProfile.property_detail.mqtt_setting) {
-          console.log('[MQTT] Initializing MQTT with device serial------------------------------------------------------------------------------------------>:', deviceMac);
 
           // Wait to ensure all modules are loaded
           setTimeout(function () {

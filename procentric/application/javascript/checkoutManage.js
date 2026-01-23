@@ -12,12 +12,12 @@ function performLocalCheckout(complete) {
         return;
     }
 
-    showLoadingPopup();
+    Main.ShowLoading();
 
     hcap.checkout.requestCheckout({
         onSuccess: function () {
 
-            hideLoadingPopup();
+            Main.HideLoading();
 
             macro("#mainContent").html("");
             macro("#mainContent").html(Util.checkoutThankYouScreen());
@@ -26,7 +26,7 @@ function performLocalCheckout(complete) {
         },
 
         onFailure: function (err) {
-            hideLoadingPopup();
+            Main.HideLoading();
             utilities.genricPopup(
                 "Checkout failed: " + ((err && err.errorMessage) || "Unknown"),
                 "info"
