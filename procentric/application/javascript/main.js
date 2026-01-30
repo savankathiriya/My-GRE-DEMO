@@ -97,6 +97,8 @@ Main.processTrigger = function (rawEvent) {
         return Navigation.lgLgDemoPlayers(evt);
       case "liveTvPlayer":
         return Navigation.demoPlayers(evt);
+      case "ourHotel":
+        return Navigation.ourHotelPageNavigation(evt);
     }
   } catch (ex) {
     console.error("processTrigger error", ex);
@@ -107,7 +109,7 @@ Main.processTrigger = function (rawEvent) {
 Main.addBackData = function (path) {
   presentPagedetails.htmlData = (macro('#mainContent').html() ).toString();
 
-  if(path == "MyDevice" || path == "liveTv" || path == "casting" || path == "lgLgLiveTv" || path == "liveTvPlayer") {
+  if(path == "MyDevice" || path == "liveTv" || path == "casting" || path == "lgLgLiveTv" || path == "liveTvPlayer" || path == "ourHotel") {
     backData.push(presentPagedetails);
     presentPagedetails = {}
   }
@@ -792,6 +794,51 @@ Main.weatherApi = function (callback) {
   });
 };
 
+Main.jsontemplateApi = function() {
+  console.log('[API] Fetching template data...');
+  
+  macro.ajax({
+    url: apiPrefixUrl + "json-template?template_uuid=1296eec4-2339-404d-b70c-57753fcee926",
+    type: "GET",
+    headers: {
+      Authorization: "Bearer " + pageDetails.access_token,
+    },
+    success: function (response) {
+      try {
+        var result = typeof response === "string" ? JSON.parse(response) : response;
+        
+        if(result.status === true) {
+          Main.jsonTemplateData = result.result;
+          
+          console.log('[API] Template data loaded successfully');
+          console.log('[API] Canvas size:', result.result.template_json.canvas.width, 'x', result.result.template_json.canvas.height);
+          console.log('[API] Elements count:', result.result.template_json.elements.length);
+          
+          Main.addBackData("ourHotel");
+          view = "ourHotel";
+          presentPagedetails.view = view;
+          
+          console.log('[API] Rendering OurHotel page...');
+          macro("#mainContent").html('');
+          macro("#mainContent").html(Util.ourHotelPage());
+          macro("#mainContent").show();
+        } else {
+          console.error('[API] Template API returned status: false');
+        }
+      } catch (parseError) {
+        console.error('[API] Failed to parse template response:', parseError);
+      }
+    },
+    error: function(err) {
+      console.error('[API] Template load failed:', err);
+      
+      // Show error to user
+      macro("#mainContent").html('<div style="color:#fff;text-align:center;padding:50px;">Failed to load template. Please try again.</div>');
+    },
+    timeout: 30000
+  });
+}
+
 Main.castingNewApi = function () {
   Main.addBackData("casting");
   Main.ShowLoading();
@@ -1061,8 +1108,9 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
 
           presentPagedetails.view = "lgLgLiveTv";
           view = "lgLgLiveTv";
-          document.documentElement.style.backgroundColor = 'transparent';
-          document.body.style.backgroundColor = 'transparent';
+          document.body.style.background = 'none';
+          // document.documentElement.style.backgroundColor = 'transparent';
+          // document.body.style.backgroundColor = 'transparent';
 
           presentPagedetails.lgLgChannelMetaDetails = result.result;
           presentPagedetails.lgLgChannelIdDetails = channelIdDetails;
@@ -1163,6 +1211,8 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
                       // play
                       media.play({
                         onSuccess: function () {
+                          macro('#lgChannel_tuningText').css('display', 'none');
+                          macro('.tv-guide-container').css('display', 'none');
                           console.log('media.play success', finalUrl);
                         },
                         onFailure: function (f) {
@@ -1264,6 +1314,7 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
             // Begin macro expansion and play
             gatherPropsAndPlay(Main.lgLgChannelIdDetails[0].ch_media_static_url);
           }
+          
 
           // 🔥 Hide tuning text after 3 seconds with fade effect
           setTimeout(function () {
@@ -1385,8 +1436,9 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
 
           presentPagedetails.view = "liveTvPlayer";
           view = "liveTvPlayer";
-          document.documentElement.style.backgroundColor = 'transparent';
-          document.body.style.backgroundColor = 'transparent';
+          document.body.style.background = 'none';
+          // document.documentElement.style.backgroundColor = 'transparent';
+          // document.body.style.backgroundColor = 'transparent';
 
           presentPagedetails.liveTvChannelMetaDetails = result.result;
           presentPagedetails.liveTvChannelIdDetails = channelIdDetails;
@@ -1407,6 +1459,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
                 port: port,
                 ipBroadcastType: hcap.channel.IpBroadcastType.UDP,
                 onSuccess: function () {
+                  macro('.live-tv-guide-container').css('display', 'none');
                   console.log('[Live TV] Successfully switched to channel');
                 },
                 onFailure: function (error) {
@@ -1430,6 +1483,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
                 minorNumber: minorNumber,
                 rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
                 onSuccess: function () {
+                  macro('.live-tv-guide-container').css('display', 'none');
                   console.log('[Live TV] Successfully switched to RF channel:', majorNumber + '-' + minorNumber);
                 },
                 onFailure: function (error) {
@@ -1450,6 +1504,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
                 logicalNumber: logicalNumber,
                 rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
                 onSuccess: function () {
+                  macro('.live-tv-guide-container').css('display', 'none');
                   console.log('[Live TV] Successfully switched to logical channel:', logicalNumber);
                 },
                 onFailure: function (error) {

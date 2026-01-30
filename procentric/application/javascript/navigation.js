@@ -493,7 +493,7 @@ Navigation.homePageNavigation = function (event) {
         // Main.deviceActivity("open","page",source);
       }
       else if(appUrl === "Casting") {
-        Main.castingNewApi();
+        Main.handleGoogleCast();
       }
       else if (appUrl === "LGTV") {
         var comingfromWatchTvApp = true;
@@ -509,10 +509,7 @@ Navigation.homePageNavigation = function (event) {
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "Ourhotel") {
-
-      }
-      else if (appUrl === "com.fubotv.app"){
-        Main.handleFuboTVCast();
+        Main.jsontemplateApi();
       }
 
       break;
@@ -526,6 +523,46 @@ Navigation.homePageNavigation = function (event) {
       break;
     }
   }
+};
+
+Navigation.ourHotelPageNavigation = function (event) {
+    var key = getKeyCode(event).keycode;
+
+    switch (key) {
+        case tvKeyCode.Return:
+        case tvKeyCode.Exit:
+        case 8:
+        case 461:
+        case 10009:
+            console.log('[Navigation] Exiting OurHotel page');
+            
+            // Clean up canvas
+            try {
+                var canvas = document.getElementById('templateCanvas');
+                if (canvas) {
+                    var ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                }
+            } catch (e) {
+                console.warn('[Navigation] Canvas cleanup failed:', e);
+            }
+            
+            // Navigate back
+            Main.previousPage();
+            break;
+            
+        case tvKeyCode.Enter:
+            // Optional: Re-render canvas on Enter key
+            console.log('[Navigation] Re-rendering canvas');
+            try {
+                renderTemplateCanvas();
+            } catch (e) {
+                console.error('[Navigation] Re-render failed:', e);
+            }
+            break;
+    }
 };
 
 
@@ -669,13 +706,7 @@ Navigation.deviceSwitchNavigation = function (event) {
       //   }
       // }
       if (action === "restart") {
-        console.log("restart called---------------------->")
-        hcap.power.reboot({
-          onSuccess: function () { console.log("Rebbot success"); },
-          onFailure: function (f) {
-            console.log("Reboot failed: " + f.errorMessage);
-          }
-        });
+        rebootTv();
       }
       else {
         ensureAppInstalled("com.webos.app.btspeakerapp");

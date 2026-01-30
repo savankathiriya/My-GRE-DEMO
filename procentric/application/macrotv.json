@@ -59,6 +59,54 @@
         {
             "FileName": "javascript/googlecast.js",
             "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-base.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-background.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-text.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-weather.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-clock.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-image.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-gif.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-video.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-action.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-renderer.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-slideshow.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-shapes.js",
+            "VersionNo": 0.1
         }
     ],
     "mainFiles": [

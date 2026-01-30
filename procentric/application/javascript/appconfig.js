@@ -168,6 +168,59 @@ function ensureAppInstalled(appId, source) {
     });
 }
 
+function rebootTv(){
+    // Step 1: Register Google Cast token (required after each reboot)
+    Main.ShowLoading();
+    if(typeof Main !== 'undefined' && Main.registerGoogleCastToken) {
+        Main.registerGoogleCastToken();
+    }
+
+    // Wait for token registration
+    setTimeout(function () {
+        var GOOGLE_CAST_APP_IDS = [
+            "com.webos.chromecast",
+            "com.webos.app.commercial.chromecastguide",
+            "com.webos.chromecast-settings"
+        ]
+
+        idcap.request("idcap://application/install", {
+            parameters: {
+                appList: GOOGLE_CAST_APP_IDS
+            },
+            onSuccess: function() {
+                setTimeout(function () {
+                    setTimeout(function () {
+                        if (typeof hcap !== 'undefined' && hcap.power && hcap.power.reboot) {
+                            hcap.power.reboot({
+                                onSuccess: function () { console.log("Rebbot success"); },
+                                onFailure: function (f) {
+                                    console.log("Reboot failed: " + f.errorMessage);
+                                }
+                            })
+                        } else {
+                            Main.HideLoading();
+                        }
+                    }, 1000); // Wait 1 second before reboot
+                }, 5000); // Wait 5 seconds for app installation
+            },
+            onFailure: function(err) {
+                setTimeout(function () {
+                    if (typeof hcap !== 'undefined' && hcap.power && hcap.power.reboot) {
+                        hcap.power.reboot({
+                            onSuccess: function () { console.log("Rebbot success"); },
+                            onFailure: function (f) {
+                                console.log("Reboot failed: " + f.errorMessage);
+                            }
+                        })
+                    } else {
+                        Main.HideLoading();
+                    }
+                }, 1000); // Wait 1 second before reboot
+            }
+        })
+    }, 1500); // Wait 1.5 seconds for token registration
+}
+
 
 function bindingAppsToPms(){
   // 1. Bind PMS
@@ -255,5 +308,45 @@ function setTheRmsIpProperty(statusIp) {
         })
     } catch (e) {
         console.error("Exception calling hcap.property.setProperty:", e);
+    }
+}
+
+/**
+ * ====================================================================
+ * SIMPLIFIED CANVAS RENDERING FUNCTION
+ * Now delegates to the modular canvas rendering system
+ * ====================================================================
+ */
+function renderTemplateCanvas() {
+    console.log('[appconfig] Calling CanvasRenderer.render()');
+    
+    try {
+        // Check if CanvasRenderer is available
+        if (typeof CanvasRenderer === 'undefined') {
+            console.error('[appconfig] CanvasRenderer not loaded! Check script includes.');
+            return;
+        }
+        
+        // Delegate to the modular rendering system
+        CanvasRenderer.render();
+        
+        // Optional: Start animation loop for dynamic content (clocks, etc.)
+        // Uncomment if you want continuous updates
+        // CanvasRenderer.startAnimationLoop();
+        
+    } catch (error) {
+        console.error('[appconfig] Canvas rendering error:', error);
+        
+        // Show error message to user
+        var canvas = document.getElementById('templateCanvas');
+        if (canvas) {
+            var ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Failed to render template', canvas.width / 2, canvas.height / 2);
+            }
+        }
     }
 }

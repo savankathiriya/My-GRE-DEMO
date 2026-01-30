@@ -21,7 +21,7 @@ var tvKeyCode = {
 	Exit: 1001,
 	Guide: 458
 };
-var deviceMac = null;
+var deviceMac = '1cf43ff843b4';
 var deviceIp  = null;
 
 window.__APP_READY_FOR_POWER__ = false;

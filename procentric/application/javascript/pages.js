@@ -1086,6 +1086,8 @@ Util.updateTvGuideChannels = function(selectedGenre, focusIndex) {
 
       var Now = channelPrograms[0] || null;
       var Next = channelPrograms[1] || null;
+
+      var shortTitle = (ch.ch_name || '').length > 16 ? (ch.ch_name || '').substring(0, 16) + '...' : (ch.ch_name || '');
       
       // NO focus class when updating after genre selection
       var focusClass = "";
@@ -1397,4 +1399,44 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
   }, 100);
 
   return Text;
+};
+
+Util.ourHotelPage = function () {
+    var html = '';
+    
+    // Full-screen container with proper z-index
+    html += '<div id="our-hotel-container" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:1000;">';
+    html += '  <canvas id="templateCanvas" style="display:block; width:100%; height:100%;"></canvas>';
+    html += '</div>';
+
+    // Render canvas after DOM is fully ready
+    setTimeout(function() {
+        try {
+            console.log('[OurHotel] Starting canvas render...');
+            renderTemplateCanvas();
+
+             // 👈 ADD THE 7 LINES HERE
+            console.log('[OurHotel] Starting animation loop for live clock updates...');
+            if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.startAnimationLoop) {
+                CanvasRenderer.startAnimationLoop();
+                console.log('[OurHotel] ✅ Animation loop started!');
+            }
+        } catch (e) {
+            console.error('[OurHotel] Canvas render failed:', e);
+            
+            // Show error message to user
+            var canvas = document.getElementById('templateCanvas');
+            if (canvas) {
+                var ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '24px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Failed to render template', canvas.width / 2, canvas.height / 2);
+                }
+            }
+        }
+    }, 150);
+
+    return html;
 };
