@@ -797,8 +797,11 @@ Main.weatherApi = function (callback) {
 Main.jsontemplateApi = function() {
   console.log('[API] Fetching template data...');
   
+  // ✅ Show loading popup
+  showLoadingPopup();
+  
   macro.ajax({
-    url: apiPrefixUrl + "json-template?template_uuid=1296eec4-2339-404d-b70c-57753fcee926",
+    url: apiPrefixUrl + "json-template?template_uuid=9116ddc9-388a-4060-8de6-3135e856d7cb",
     type: "GET",
     headers: {
       Authorization: "Bearer " + pageDetails.access_token,
@@ -822,20 +825,25 @@ Main.jsontemplateApi = function() {
           macro("#mainContent").html('');
           macro("#mainContent").html(Util.ourHotelPage());
           macro("#mainContent").show();
+          
+          // ⚠️ Don't hide loading yet - it will be hidden after canvas renders
         } else {
           console.error('[API] Template API returned status: false');
+          hideLoadingPopup(); // ✅ Hide on error
         }
       } catch (parseError) {
         console.error('[API] Failed to parse template response:', parseError);
+        hideLoadingPopup(); // ✅ Hide on error
       }
     },
     error: function(err) {
       console.error('[API] Template load failed:', err);
+      hideLoadingPopup(); // ✅ Hide on error
       
       // Show error to user
       macro("#mainContent").html('<div style="color:#fff;text-align:center;padding:50px;">Failed to load template. Please try again.</div>');
     },
-    timeout: 30000
+    timeout: 30000 
   });
 }
 

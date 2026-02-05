@@ -1401,30 +1401,88 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
   return Text;
 };
 
+/**
+ * ====================================================================
+ * ENHANCED UTIL.OURHOTELPAGE
+ * Includes automatic navigation initialization
+ * Add this to your pages.js file, replacing the existing Util.ourHotelPage
+ * ====================================================================
+ */
+
 Util.ourHotelPage = function () {
     var html = '';
     
-    // Full-screen container with proper z-index
-    html += '<div id="our-hotel-container" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:1000;">';
-    html += '  <canvas id="templateCanvas" style="display:block; width:100%; height:100%;"></canvas>';
+    // 🔥 FIX: Use pixel values and add flexbox centering for overscan compensation
+    html += '<div id="our-hotel-container" style="position:fixed; top:0; left:0; width:' + window.innerWidth + 'px; height:' + window.innerHeight + 'px; background:#000; z-index:1000; margin:0; padding:0; overflow:hidden; display:flex; align-items:center; justify-content:center;">';
+    html += '  <canvas id="templateCanvas" style="display:block; position:absolute; top:0; left:0;"></canvas>';
     html += '</div>';
 
     // Render canvas after DOM is fully ready
     setTimeout(function() {
         try {
             console.log('[OurHotel] Starting canvas render...');
-            renderTemplateCanvas();
+            
+            // Clean up any existing overlays from previous visits
+            if (typeof CanvasRss !== 'undefined' && CanvasRss.cleanup) {
+                CanvasRss.cleanup();
+            }
+            if (typeof CanvasTicker !== 'undefined' && CanvasTicker.cleanup) {
+                CanvasTicker.cleanup();
+            }
+            if (typeof CanvasGif !== 'undefined' && CanvasGif.cleanup) {
+                CanvasGif.cleanup();
+            }
+            if (typeof CanvasSlideshow !== 'undefined' && CanvasSlideshow.cleanup) {
+                CanvasSlideshow.cleanup();
+            }
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.cleanup) {
+                CanvasAction.cleanup();
+            }
+            
+            // Render the canvas
+            if (typeof renderTemplateCanvas !== 'undefined') {
+                renderTemplateCanvas();
+            } else if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.render) {
+                CanvasRenderer.render();
+            }
 
-             // 👈 ADD THE 7 LINES HERE
+            // ✅ Hide loading after canvas render completes
+            setTimeout(function() {
+                hideLoadingPopup();
+                console.log('[OurHotel] ✅ Loading hidden - canvas fully rendered');
+            }, 500);
+
+            // Start animation loop for live updates (clocks, etc.)
             console.log('[OurHotel] Starting animation loop for live clock updates...');
             if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.startAnimationLoop) {
                 CanvasRenderer.startAnimationLoop();
                 console.log('[OurHotel] ✅ Animation loop started!');
             }
+
+            // Initialize navigation for action buttons
+            console.log('[OurHotel] Initializing action navigation...');
+            if (typeof Navigation !== 'undefined' && Navigation.initializeOurHotelNavigation) {
+                Navigation.initializeOurHotelNavigation();
+                console.log('[OurHotel] ✅ Navigation initialized!');
+            } else if (typeof CanvasAction !== 'undefined' && CanvasAction.initializeNavigation) {
+                setTimeout(function() {
+                    if (Main.jsonTemplateData && 
+                        Main.jsonTemplateData.template_json &&
+                        Main.jsonTemplateData.template_json.elements) {
+                        
+                        CanvasAction.initializeNavigation(Main.jsonTemplateData.template_json.elements);
+                        
+                        if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.refresh) {
+                            CanvasRenderer.refresh();
+                        }
+                    }
+                }, 500);
+            }
+            
         } catch (e) {
             console.error('[OurHotel] Canvas render failed:', e);
+            hideLoadingPopup();
             
-            // Show error message to user
             var canvas = document.getElementById('templateCanvas');
             if (canvas) {
                 var ctx = canvas.getContext('2d');

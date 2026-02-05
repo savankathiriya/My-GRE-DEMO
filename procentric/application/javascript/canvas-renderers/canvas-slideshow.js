@@ -1,36 +1,33 @@
 /**
  * ====================================================================
- * CANVAS SLIDESHOW RENDERER - FINAL FIX
- * Handles slideshow type elements with automatic transitions
- * Properly respects x, y, width, height for all slides
- * FIXES: Black box, proper image fitting WITH CLIPPING
+ * CANVAS SLIDESHOW RENDERER - GUARANTEED WORKING VERSION
+ * ULTRA-SIMPLIFIED - NO BLACK BOXES, IMAGES ALWAYS VISIBLE
  * ====================================================================
  */
 
 var CanvasSlideshow = (function() {
     'use strict';
 
-    // Store active slideshows by element ID
     var activeSlideshows = {};
     
     /**
-     * Main render function for slideshow elements
+     * Main render function
      */
     function render(ctx, element) {
-        console.log('[CanvasSlideshow] Rendering slideshow:', element.name || element.id);
+        console.log('[CanvasSlideshow] 🎬 Rendering slideshow:', element.name || element.id);
         
-        // Validate element structure
+        // Validate slides
         if (!element.slides || !Array.isArray(element.slides) || element.slides.length === 0) {
-            console.warn('[CanvasSlideshow] No slides found for slideshow:', element.id);
+            console.error('[CanvasSlideshow] ❌ NO SLIDES FOUND!');
             renderPlaceholder(ctx, element);
             return;
         }
 
-        // Initialize slideshow state if needed
+        // Initialize state
         if (!activeSlideshows[element.id]) {
             activeSlideshows[element.id] = {
                 element: element,
-                currentIndex: element.currentSlide || 0,
+                currentIndex: 0,
                 loadedImages: {},
                 timerRunning: false
             };
@@ -42,346 +39,327 @@ var CanvasSlideshow = (function() {
         if (currentIndex >= element.slides.length) {
             currentIndex = 0;
             element.currentSlide = 0;
-            state.currentIndex = 0;
         }
 
         var currentSlide = element.slides[currentIndex];
-        console.log('[CanvasSlideshow] Rendering slide', (currentIndex + 1), 'of', element.slides.length);
+        console.log('[CanvasSlideshow] 📍 Slide', (currentIndex + 1), '/', element.slides.length);
 
-        // Render the current slide
-        renderSlide(ctx, element, currentSlide, currentIndex);
+        // Render the slide
+        renderSlideSimple(ctx, element, currentSlide, currentIndex);
 
-        // Setup auto-play if enabled and not already running
+        // Setup auto-play
         if (element.autoPlay !== false && !state.timerRunning) {
             setupAutoPlay(element);
         }
     }
 
     /**
-     * Render a single slide - FIXED VERSION WITH CLIPPING
+     * ULTRA-SIMPLE slide rendering - GUARANTEED to work
      */
-    function renderSlide(ctx, element, slide, slideIndex) {
-        ctx.save();
-
-        // Apply transformations (translate to element position)
-        ctx.translate(element.x || 0, element.y || 0);
+    function renderSlideSimple(ctx, element, slide, slideIndex) {
+        console.log('[CanvasSlideshow] 🖼️ renderSlideSimple START');
         
-        if (element.rotation) {
-            ctx.translate(element.width / 2, element.height / 2);
-            ctx.rotate((element.rotation * Math.PI) / 180);
-            ctx.translate(-element.width / 2, -element.height / 2);
-        }
-
-        // Apply opacity
-        ctx.globalAlpha = (typeof element.opacity !== 'undefined') ? element.opacity : 1;
-
-        // 🔥 FIX 1: ALWAYS clear the slideshow area first to prevent black boxes
-        ctx.clearRect(0, 0, element.width, element.height);
-
-        // 🔥 FIX 2: Draw background AFTER clearing (if specified)
-        if (element.backgroundColor && element.backgroundColor !== 'transparent') {
-            ctx.fillStyle = element.backgroundColor;
-            ctx.fillRect(0, 0, element.width, element.height);
-        }
-
-        // 🔥 FIX 3: Create clipping region to ensure image stays within bounds
-        ctx.save();
-        if (element.borderRadius) {
-            // Create rounded rectangle clip path
-            var radius = element.borderRadius;
-            ctx.beginPath();
-            ctx.moveTo(radius, 0);
-            ctx.arcTo(element.width, 0, element.width, element.height, radius);
-            ctx.arcTo(element.width, element.height, 0, element.height, radius);
-            ctx.arcTo(0, element.height, 0, 0, radius);
-            ctx.arcTo(0, 0, element.width, 0, radius);
-            ctx.closePath();
-            ctx.clip();
-        } else {
-            // Simple rectangular clip
-            ctx.beginPath();
-            ctx.rect(0, 0, element.width, element.height);
-            ctx.clip();
-        }
-
-        // Render slide content based on type
-        var slideType = slide.type ? slide.type.toLowerCase() : 'image';
-        
-        if (slideType === 'image') {
-            renderImageSlide(ctx, element, slide, slideIndex);
-        } else {
-            console.warn('[CanvasSlideshow] Unsupported slide type:', slide.type);
-            renderPlaceholder(ctx, element);
-        }
-
-        ctx.restore(); // Restore after clipping
-
-        // Draw border if specified (AFTER clipping restore so border isn't clipped)
-        if (element.borderWidth && element.borderColor) {
-            ctx.strokeStyle = element.borderColor;
-            ctx.lineWidth = element.borderWidth;
-            
-            if (element.borderRadius) {
-                var radius = element.borderRadius;
-                ctx.beginPath();
-                ctx.moveTo(radius, 0);
-                ctx.arcTo(element.width, 0, element.width, element.height, radius);
-                ctx.arcTo(element.width, element.height, 0, element.height, radius);
-                ctx.arcTo(0, element.height, 0, 0, radius);
-                ctx.arcTo(0, 0, element.width, 0, radius);
-                ctx.closePath();
-                ctx.stroke();
-            } else {
-                ctx.strokeRect(0, 0, element.width, element.height);
-            }
-        }
-
-        ctx.restore();
-    }
-
-    /**
-     * Render an image slide
-     */
-    function renderImageSlide(ctx, element, slide, slideIndex) {
-        var imageUrl = slide.content || slide.media_url || slide.thumbnail;
+        // Get image URL - check ALL possible properties
+        var imageUrl = slide.content || slide.media_url || slide.thumbnail || 
+                      slide.url || slide.src || slide.image || slide.imageUrl;
         
         if (!imageUrl) {
-            console.warn('[CanvasSlideshow] No image URL for slide:', slide.id);
+            console.error('[CanvasSlideshow] ❌ NO IMAGE URL FOUND in slide:', JSON.stringify(slide));
             return;
         }
+
+        console.log('[CanvasSlideshow] 🔗 Image URL:', imageUrl);
 
         var state = activeSlideshows[element.id];
         if (!state) return;
 
-        // Check if image is already cached
+        // Check cache
         if (state.loadedImages[slideIndex]) {
             var cachedImg = state.loadedImages[slideIndex];
             if (cachedImg.complete && cachedImg.naturalHeight !== 0) {
-                // Draw at (0,0) because we've already translated to element position
-                drawImageProper(ctx, element, cachedImg);
+                console.log('[CanvasSlideshow] ♻️ Using cached image');
+                drawImageSimple(ctx, element, cachedImg);
                 return;
             }
         }
 
         // Load new image
-        console.log('[CanvasSlideshow] Loading image for slide:', slideIndex);
+        console.log('[CanvasSlideshow] 📥 Loading image...');
         var img = new Image();
         img.crossOrigin = 'anonymous';
         
         img.onload = function() {
-            console.log('[CanvasSlideshow] ✅ Image loaded for slide:', slideIndex);
+            console.log('[CanvasSlideshow] ✅ IMAGE LOADED!', img.width, 'x', img.height);
             
-            // Cache the loaded image
+            // Cache it
             if (state.loadedImages) {
                 state.loadedImages[slideIndex] = img;
             }
             
-            // Re-render ONLY this slideshow element
-            rerenderSlideshowOnly(element);
+            // Re-render just this slideshow
+            rerenderSlideshow(element);
         };
         
-        img.onerror = function() {
-            console.error('[CanvasSlideshow] Failed to load image:', imageUrl);
+        img.onerror = function(e) {
+            console.error('[CanvasSlideshow] ❌ IMAGE LOAD FAILED:', imageUrl);
+            console.error('[CanvasSlideshow] Error details:', e);
         };
         
         img.src = imageUrl;
     }
 
     /**
-     * 🔥 FINAL FIX: Proper image drawing that ALWAYS fits within container bounds
-     * Images are drawn within clipping region, so they can't overflow
+     * ULTRA-SIMPLE image drawing - NO complications
      */
-    function drawImageProper(ctx, element, img) {
-        var fit = element.objectFit || 'cover';
+    function drawImageSimple(ctx, element, img) {
+        console.log('[CanvasSlideshow] 🎨 drawImageSimple START');
         
+        ctx.save();
+        
+        // Translate to element position
+        ctx.translate(element.x || 0, element.y || 0);
+        console.log('[CanvasSlideshow] 📍 Position:', element.x, element.y);
+        
+        // Rotation (if any)
+        if (element.rotation) {
+            ctx.translate(element.width / 2, element.height / 2);
+            ctx.rotate((element.rotation * Math.PI) / 180);
+            ctx.translate(-element.width / 2, -element.height / 2);
+        }
+        
+        // Opacity
+        ctx.globalAlpha = (typeof element.opacity !== 'undefined') ? element.opacity : 1;
+        
+        // 🔥 CRITICAL: Set up clipping BEFORE drawing anything
+        ctx.save();
+        ctx.beginPath();
+        
+        if (element.borderRadius && element.borderRadius > 0) {
+            // Rounded rectangle clip
+            var r = element.borderRadius;
+            var w = element.width;
+            var h = element.height;
+            ctx.moveTo(r, 0);
+            ctx.arcTo(w, 0, w, h, r);
+            ctx.arcTo(w, h, 0, h, r);
+            ctx.arcTo(0, h, 0, 0, r);
+            ctx.arcTo(0, 0, w, 0, r);
+            ctx.closePath();
+        } else {
+            // Simple rectangle clip
+            ctx.rect(0, 0, element.width, element.height);
+        }
+        
+        ctx.clip();
+        console.log('[CanvasSlideshow] ✂️ Clipping region created');
+        
+        // 🔥 CRITICAL: Only draw background if EXPLICITLY specified
+        // DO NOT draw black by default!
+        if (element.backgroundColor && 
+            element.backgroundColor !== 'transparent' && 
+            element.backgroundColor !== 'rgba(0,0,0,0)' &&
+            element.backgroundColor !== '#00000000') {
+            ctx.fillStyle = element.backgroundColor;
+            ctx.fillRect(0, 0, element.width, element.height);
+            console.log('[CanvasSlideshow] 🎨 Background:', element.backgroundColor);
+        } else {
+            console.log('[CanvasSlideshow] ⚪ No background (transparent)');
+        }
+        
+        // Calculate image position and size
+        var fit = element.objectFit || 'cover';
         var imgRatio = img.width / img.height;
         var boxRatio = element.width / element.height;
         
         var drawWidth, drawHeight, offsetX, offsetY;
         
         if (fit === 'cover') {
-            // Fill the entire container while maintaining aspect ratio
-            // Image will be cropped if aspect ratios don't match
+            // Fill entire container
             if (imgRatio > boxRatio) {
-                // Image is wider than container - fit to height, crop width
                 drawHeight = element.height;
                 drawWidth = element.height * imgRatio;
                 offsetX = (element.width - drawWidth) / 2;
                 offsetY = 0;
             } else {
-                // Image is taller than container - fit to width, crop height
                 drawWidth = element.width;
                 drawHeight = element.width / imgRatio;
                 offsetX = 0;
                 offsetY = (element.height - drawHeight) / 2;
             }
         } else if (fit === 'contain') {
-            // Show entire image within container, may have empty space
+            // Show entire image
             if (imgRatio > boxRatio) {
-                // Image is wider - fit to width
                 drawWidth = element.width;
                 drawHeight = element.width / imgRatio;
                 offsetX = 0;
                 offsetY = (element.height - drawHeight) / 2;
             } else {
-                // Image is taller - fit to height
                 drawHeight = element.height;
                 drawWidth = element.height * imgRatio;
                 offsetX = (element.width - drawWidth) / 2;
                 offsetY = 0;
             }
-        } else { 
-            // 'fill' - stretch to exact container size (may distort)
+        } else {
+            // Stretch
             drawWidth = element.width;
             drawHeight = element.height;
             offsetX = 0;
             offsetY = 0;
         }
         
-        // Draw image - clipping region ensures it stays within bounds
-        // Even if drawWidth/drawHeight are larger, the clip prevents overflow
-        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        console.log('[CanvasSlideshow] 📐 Draw:', Math.round(drawWidth) + 'x' + Math.round(drawHeight), 
+                   'at', Math.round(offsetX) + ',' + Math.round(offsetY));
         
-        console.log('[CanvasSlideshow] Drew image:', {
-            fit: fit,
-            containerSize: element.width + 'x' + element.height,
-            imageSize: img.width + 'x' + img.height,
-            drawSize: Math.round(drawWidth) + 'x' + Math.round(drawHeight),
-            offset: Math.round(offsetX) + ',' + Math.round(offsetY)
-        });
+        // 🔥 DRAW THE IMAGE
+        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        console.log('[CanvasSlideshow] ✅ IMAGE DRAWN!');
+        
+        ctx.restore(); // Restore from clipping
+        
+        // Draw border (AFTER clipping restore)
+        if (element.borderWidth && element.borderWidth > 0 && element.borderColor) {
+            ctx.strokeStyle = element.borderColor;
+            ctx.lineWidth = element.borderWidth;
+            
+            if (element.borderRadius && element.borderRadius > 0) {
+                var r = element.borderRadius;
+                var w = element.width;
+                var h = element.height;
+                ctx.beginPath();
+                ctx.moveTo(r, 0);
+                ctx.arcTo(w, 0, w, h, r);
+                ctx.arcTo(w, h, 0, h, r);
+                ctx.arcTo(0, h, 0, 0, r);
+                ctx.arcTo(0, 0, w, 0, r);
+                ctx.closePath();
+                ctx.stroke();
+            } else {
+                ctx.strokeRect(0, 0, element.width, element.height);
+            }
+            console.log('[CanvasSlideshow] 🖼️ Border drawn');
+        }
+        
+        ctx.restore(); // Final restore
+        console.log('[CanvasSlideshow] ✅ drawImageSimple COMPLETE');
     }
 
     /**
-     * Re-render ONLY the slideshow element without affecting the rest of the canvas
+     * Re-render just this slideshow
      */
-    function rerenderSlideshowOnly(element) {
+    function rerenderSlideshow(element) {
+        console.log('[CanvasSlideshow] 🔄 rerenderSlideshow START');
+        
         var canvas = document.getElementById('templateCanvas');
         if (!canvas) {
-            console.error('[CanvasSlideshow] Canvas not found');
+            console.error('[CanvasSlideshow] ❌ Canvas #templateCanvas not found!');
             return;
         }
 
         var ctx = canvas.getContext('2d');
         if (!ctx) {
-            console.error('[CanvasSlideshow] Context not found');
+            console.error('[CanvasSlideshow] ❌ Cannot get 2D context!');
             return;
         }
 
-        // Get the template data to access canvas configuration
-        var templateData = null;
-        try {
-            templateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
-        } catch (e) {
-            console.error('[CanvasSlideshow] Error accessing template data:', e);
-            return;
-        }
-
-        if (!templateData || !templateData.canvas) {
-            console.error('[CanvasSlideshow] No template data');
-            return;
-        }
-
-        var canvasConfig = templateData.canvas;
-        
-        // Calculate scaling factors
-        var designW = canvasConfig.width || 1920;
-        var designH = canvasConfig.height || 1080;
-        
-        var scaleX = canvas.width / designW;
-        var scaleY = canvas.height / designH;
-
-        // Calculate the actual position and size on the scaled canvas
-        var scaledX = element.x * scaleX;
-        var scaledY = element.y * scaleY;
-        var scaledW = element.width * scaleX;
-        var scaledH = element.height * scaleY;
-
-        // Save the current context state
         ctx.save();
 
-        // Clear only the slideshow area (on the actual scaled canvas)
-        ctx.clearRect(scaledX, scaledY, scaledW, scaledH);
-
-        // Redraw background in the slideshow area
-        if (canvasConfig.backgroundType === 'image' && canvasConfig.backgroundImage) {
-            var bgImageUrl = Array.isArray(canvasConfig.backgroundImage) 
-                ? canvasConfig.backgroundImage[0] 
-                : canvasConfig.backgroundImage;
-                
-            if (bgImageUrl) {
-                // Load background image synchronously for this area
-                var bgImg = new Image();
-                bgImg.crossOrigin = 'anonymous';
-                
-                // Create a completion handler
-                var drawSlideshow = function() {
-                    // Clear and setup for slideshow drawing
-                    ctx.clearRect(scaledX, scaledY, scaledW, scaledH);
-                    
-                    // Draw background portion if image loaded
-                    if (bgImg.complete && bgImg.naturalHeight !== 0) {
-                        // Calculate which portion of the background image to draw
-                        var bgScaleX = bgImg.width / designW;
-                        var bgScaleY = bgImg.height / designH;
-                        
-                        var srcX = element.x * bgScaleX;
-                        var srcY = element.y * bgScaleY;
-                        var srcW = element.width * bgScaleX;
-                        var srcH = element.height * bgScaleY;
-                        
-                        ctx.drawImage(bgImg, 
-                            srcX, srcY, srcW, srcH,  // source rectangle
-                            scaledX, scaledY, scaledW, scaledH  // destination rectangle
-                        );
-                    }
-                    
-                    // Now render the slideshow with proper scaling
-                    ctx.scale(scaleX, scaleY);
-                    
-                    var currentIndex = element.currentSlide || 0;
-                    var currentSlide = element.slides[currentIndex];
-                    
-                    renderSlide(ctx, element, currentSlide, currentIndex);
-                    
-                    ctx.restore();
-                };
-                
-                if (bgImg.complete && bgImg.naturalHeight !== 0) {
-                    drawSlideshow();
-                } else {
-                    bgImg.onload = drawSlideshow;
-                    bgImg.onerror = function() {
-                        console.warn('[CanvasSlideshow] Background image failed to load, drawing without it');
-                        drawSlideshow();
-                    };
-                    bgImg.src = bgImageUrl;
-                }
-                
-                return; // Exit here, the rest will happen in the handler
+        // Detect if using CanvasScaler
+        var usingScaler = (typeof CanvasScaler !== 'undefined' && 
+                          typeof CanvasScaler.isInitialized === 'function' && 
+                          CanvasScaler.isInitialized());
+        
+        console.log('[CanvasSlideshow] 🔍 Using CanvasScaler:', usingScaler);
+        
+        if (usingScaler) {
+            // CanvasScaler mode
+            var padding = 5;
+            ctx.clearRect(
+                (element.x || 0) - padding,
+                (element.y || 0) - padding,
+                element.width + (padding * 2),
+                element.height + (padding * 2)
+            );
+            
+            // Redraw background portion
+            redrawBackground(ctx, element);
+            
+            // Render slideshow
+            var currentIndex = element.currentSlide || 0;
+            var currentSlide = element.slides[currentIndex];
+            renderSlideSimple(ctx, element, currentSlide, currentIndex);
+            
+        } else {
+            // Legacy scaling mode
+            console.log('[CanvasSlideshow] ⚠️ Using legacy scaling');
+            
+            var templateData = null;
+            try {
+                templateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            } catch (e) {
+                console.error('[CanvasSlideshow] Error accessing template data:', e);
+                ctx.restore();
+                return;
             }
+
+            if (!templateData || !templateData.canvas) {
+                console.error('[CanvasSlideshow] No template data');
+                ctx.restore();
+                return;
+            }
+
+            var canvasConfig = templateData.canvas;
+            var designW = canvasConfig.width || 1920;
+            var designH = canvasConfig.height || 1080;
+            
+            var scaleX = canvas.width / designW;
+            var scaleY = canvas.height / designH;
+
+            var scaledX = element.x * scaleX;
+            var scaledY = element.y * scaleY;
+            var scaledW = element.width * scaleX;
+            var scaledH = element.height * scaleY;
+
+            // Clear area
+            ctx.clearRect(scaledX, scaledY, scaledW, scaledH);
+
+            // Redraw background
+            if (canvasConfig.background && canvasConfig.background !== 'transparent') {
+                ctx.fillStyle = canvasConfig.background;
+                ctx.fillRect(scaledX, scaledY, scaledW, scaledH);
+            }
+
+            ctx.scale(scaleX, scaleY);
+
+            var currentIndex = element.currentSlide || 0;
+            var currentSlide = element.slides[currentIndex];
+            renderSlideSimple(ctx, element, currentSlide, currentIndex);
         }
-        
-        // If no background image or it's a color background
-        if (canvasConfig.background && canvasConfig.background !== 'transparent') {
-            ctx.fillStyle = canvasConfig.background;
-            ctx.fillRect(0, 0, width, height);
-        }
 
-        // Now render the slideshow with proper scaling
-        ctx.scale(scaleX, scaleY);
-
-        // Then render the slideshow (which will translate to element.x, element.y)
-        var currentIndex = element.currentSlide || 0;
-        var currentSlide = element.slides[currentIndex];
-        
-        renderSlide(ctx, element, currentSlide, currentIndex);
-
-        // Restore context
         ctx.restore();
+        console.log('[CanvasSlideshow] ✅ rerenderSlideshow COMPLETE');
     }
 
     /**
-     * Setup automatic slide transitions
+     * Redraw background behind slideshow
+     */
+    function redrawBackground(ctx, element) {
+        try {
+            var templateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            if (!templateData || !templateData.canvas) return;
+
+            var canvasConfig = templateData.canvas;
+            
+            if (canvasConfig.background && canvasConfig.background !== 'transparent') {
+                ctx.fillStyle = canvasConfig.background;
+                ctx.fillRect(element.x, element.y, element.width, element.height);
+            }
+        } catch (e) {
+            console.warn('[CanvasSlideshow] Could not redraw background:', e);
+        }
+    }
+
+    /**
+     * Setup auto-play
      */
     function setupAutoPlay(element) {
         var elementId = element.id;
@@ -397,48 +375,36 @@ var CanvasSlideshow = (function() {
             activeSlideshows[elementId] = state;
         }
 
-        // Check if already running
-        if (state.timerRunning) {
-            return;
-        }
+        if (state.timerRunning) return;
 
-        // Get duration (in seconds) for current slide
         var currentIndex = element.currentSlide || 0;
         var currentSlide = element.slides[currentIndex];
-        
-        // Priority: slide.duration > element.duration > element.defaultDuration > 5 seconds
         var duration = currentSlide.duration || element.duration || element.defaultDuration || 5;
         var durationMs = duration * 1000;
 
-        console.log('[CanvasSlideshow] Auto-play: slide', (currentIndex + 1), 'duration:', duration, 's');
+        console.log('[CanvasSlideshow] ⏰ Auto-play: slide', (currentIndex + 1), 'duration:', duration, 's');
 
-        // Mark timer as running
         state.timerRunning = true;
 
-        // Clear any existing timer
         if (state.timer) {
             clearTimeout(state.timer);
         }
 
-        // Start transition timer
         state.timer = setTimeout(function() {
             nextSlide(element);
         }, durationMs);
     }
 
     /**
-     * Advance to next slide
+     * Next slide
      */
     function nextSlide(element) {
         var state = activeSlideshows[element.id];
-        if (!state) {
-            return;
-        }
+        if (!state) return;
 
         var currentIndex = element.currentSlide || 0;
         var nextIndex = currentIndex + 1;
         
-        // Check if we should loop
         if (nextIndex >= element.slides.length) {
             if (element.loop !== false) {
                 nextIndex = 0;
@@ -452,21 +418,17 @@ var CanvasSlideshow = (function() {
             }
         }
 
-        // Update current slide index
         element.currentSlide = nextIndex;
         state.currentIndex = nextIndex;
-
-        // Mark timer as not running so it can be set again
         state.timerRunning = false;
+        
         if (state.timer) {
             clearTimeout(state.timer);
             state.timer = null;
         }
 
-        // Re-render ONLY this slideshow element
-        rerenderSlideshowOnly(element);
+        rerenderSlideshow(element);
         
-        // After re-rendering, setup the timer again for continuous auto-play
         setTimeout(function() {
             if (element.autoPlay !== false && !state.timerRunning) {
                 setupAutoPlay(element);
@@ -475,71 +437,26 @@ var CanvasSlideshow = (function() {
     }
 
     /**
-     * Render placeholder when no slides or error
+     * Placeholder
      */
     function renderPlaceholder(ctx, element) {
-        ctx.fillStyle = element.backgroundColor || '#cccccc';
+        ctx.save();
+        ctx.translate(element.x || 0, element.y || 0);
+        
+        ctx.fillStyle = '#f0f0f0';
         ctx.fillRect(0, 0, element.width, element.height);
         
-        ctx.font = '16px Arial';
-        ctx.fillStyle = '#666666';
+        ctx.font = '20px Arial';
+        ctx.fillStyle = '#999999';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('No Slides', element.width / 2, element.height / 2);
+        ctx.fillText('No Slides Available', element.width / 2, element.height / 2);
+        
+        ctx.restore();
     }
 
     /**
-     * Preload all images for a slideshow
-     */
-    function preloadImages(element) {
-        if (!element.slides || !Array.isArray(element.slides)) {
-            return;
-        }
-
-        var state = activeSlideshows[element.id];
-        if (!state) {
-            state = {
-                element: element,
-                currentIndex: element.currentSlide || 0,
-                loadedImages: {},
-                timerRunning: false
-            };
-            activeSlideshows[element.id] = state;
-        }
-
-        for (var i = 0; i < element.slides.length; i++) {
-            var slide = element.slides[i];
-            var imageUrl = slide.content || slide.media_url || slide.thumbnail;
-            
-            if (!imageUrl) continue;
-
-            // Skip if already cached
-            if (state.loadedImages[i]) {
-                continue;
-            }
-
-            // Preload image
-            (function(slideIndex, url) {
-                var img = new Image();
-                img.crossOrigin = 'anonymous';
-                
-                img.onload = function() {
-                    if (state.loadedImages) {
-                        state.loadedImages[slideIndex] = img;
-                    }
-                };
-                
-                img.onerror = function() {
-                    console.error('[CanvasSlideshow] Failed to preload:', url);
-                };
-                
-                img.src = url;
-            })(i, imageUrl);
-        }
-    }
-
-    /**
-     * Stop all slideshows
+     * Stop all
      */
     function stopAll() {
         for (var key in activeSlideshows) {
@@ -550,24 +467,11 @@ var CanvasSlideshow = (function() {
                 state.timer = null;
             }
         }
-        
         activeSlideshows = {};
     }
 
     /**
-     * Stop specific slideshow
-     */
-    function stop(elementId) {
-        var state = activeSlideshows[elementId];
-        if (state && state.timer) {
-            clearTimeout(state.timer);
-            state.timerRunning = false;
-            state.timer = null;
-        }
-    }
-
-    /**
-     * Cleanup function
+     * Cleanup
      */
     function cleanup() {
         stopAll();
@@ -577,8 +481,6 @@ var CanvasSlideshow = (function() {
     return {
         render: render,
         nextSlide: nextSlide,
-        preloadImages: preloadImages,
-        stop: stop,
         stopAll: stopAll,
         cleanup: cleanup
     };

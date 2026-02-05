@@ -508,7 +508,7 @@ Navigation.homePageNavigation = function (event) {
         // Main.deviceActivity("open","app",source);
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
-      else if (appUrl === "Ourhotel") {
+      else if (appUrl === "custom") {
         Main.jsontemplateApi();
       }
 
@@ -525,10 +525,59 @@ Navigation.homePageNavigation = function (event) {
   }
 };
 
+/**
+ * ====================================================================
+ * ENHANCED NAVIGATION FOR OURHOTEL PAGE
+ * Integrates with CanvasAction for remote control navigation
+ * ====================================================================
+ */
+
+// Add this to your Navigation object in navigation.js
+
+/**
+ * Navigation handler for OurHotel page with action buttons
+ */
 Navigation.ourHotelPageNavigation = function (event) {
     var key = getKeyCode(event).keycode;
 
+    console.log('[Navigation] OurHotel key pressed:', key);
+
     switch (key) {
+        case tvKeyCode.ArrowUp:
+            console.log('[Navigation] Arrow Up');
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.moveFocus) {
+                CanvasAction.moveFocus('up');
+            }
+            break;
+
+        case tvKeyCode.ArrowDown:
+            console.log('[Navigation] Arrow Down');
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.moveFocus) {
+                CanvasAction.moveFocus('down');
+            }
+            break;
+
+        case tvKeyCode.ArrowLeft:
+            console.log('[Navigation] Arrow Left');
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.moveFocus) {
+                CanvasAction.moveFocus('left');
+            }
+            break;
+
+        case tvKeyCode.ArrowRight:
+            console.log('[Navigation] Arrow Right');
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.moveFocus) {
+                CanvasAction.moveFocus('right');
+            }
+            break;
+
+        case tvKeyCode.Enter:
+            console.log('[Navigation] Enter pressed');
+            if (typeof CanvasAction !== 'undefined' && CanvasAction.executeAction) {
+                CanvasAction.executeAction();
+            }
+            break;
+
         case tvKeyCode.Return:
         case tvKeyCode.Exit:
         case 8:
@@ -550,19 +599,45 @@ Navigation.ourHotelPageNavigation = function (event) {
             }
             
             // Navigate back
-            Main.previousPage();
-            break;
-            
-        case tvKeyCode.Enter:
-            // Optional: Re-render canvas on Enter key
-            console.log('[Navigation] Re-rendering canvas');
-            try {
-                renderTemplateCanvas();
-            } catch (e) {
-                console.error('[Navigation] Re-render failed:', e);
+            if (typeof Main !== 'undefined' && Main.previousPage) {
+                Main.previousPage();
             }
             break;
     }
+};
+
+/**
+ * Initialize navigation when OurHotel page loads
+ */
+Navigation.initializeOurHotelNavigation = function() {
+    console.log('[Navigation] Initializing OurHotel navigation');
+    
+    // Wait for canvas to render
+    setTimeout(function() {
+        try {
+            if (typeof Main !== 'undefined' && 
+                Main.jsonTemplateData && 
+                Main.jsonTemplateData.template_json &&
+                Main.jsonTemplateData.template_json.elements) {
+                
+                var elements = Main.jsonTemplateData.template_json.elements;
+                
+                // Initialize action navigation
+                if (typeof CanvasAction !== 'undefined' && CanvasAction.initializeNavigation) {
+                    CanvasAction.initializeNavigation(elements);
+                    
+                    // Refresh canvas to show initial focus
+                    if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.refresh) {
+                        CanvasRenderer.refresh();
+                    }
+                }
+                
+                console.log('[Navigation] OurHotel navigation initialized successfully');
+            }
+        } catch (e) {
+            console.error('[Navigation] Failed to initialize OurHotel navigation:', e);
+        }
+    }, 500);
 };
 
 

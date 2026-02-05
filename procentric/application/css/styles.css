@@ -129,3 +129,35 @@ img.imgLoader {
     width: 100%;
     height: 100%;
 }
+
+/* Reset body and html for full-screen canvas */
+body, html {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+/* Ensure container doesn't add extra spacing */
+#our-hotel-container {
+    box-sizing: border-box !important;
+}
+
+/* Canvas element styling */
+#templateCanvas {
+    display: block !important;
+    box-sizing: border-box !important;
+}
+
+/* Remove any default margins/padding from all elements */
+* {
+    box-sizing: border-box;
+}
+
+/* Main content container reset */
+#mainContent {
+    margin: 0 !important;
+    padding: 0 !important;
+}

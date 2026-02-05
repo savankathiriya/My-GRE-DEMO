@@ -1,15 +1,21 @@
 /**
  * ====================================================================
- * CANVAS ACTION ELEMENT RENDERER
- * Handles action elements (interactive cards with text overlays)
+ * CANVAS ACTION ELEMENT RENDERER - CSS OVERLAY FOCUS VERSION
+ * Uses HTML overlays for focus instead of canvas redrawing
+ * NO CANVAS REDRAW = NO BLINKING OR DUPLICATES
  * ====================================================================
  */
 
 var CanvasAction = (function() {
     'use strict';
 
+    // Store action elements for navigation
+    var actionElements = [];
+    var focusedIndex = -1;
+    var focusOverlays = {}; // Store overlay elements by action ID
+
     /**
-     * Render ACTION element with text showing on top
+     * Render ACTION element - ONCE ONLY, NEVER REDRAWN
      */
     function render(ctx, el) {
         console.log('[CanvasAction] Rendering:', el.name || el.id);
@@ -19,8 +25,14 @@ var CanvasAction = (function() {
         // Position & rotation
         CanvasBase.applyTransformations(ctx, el);
         
-        // STEP 1: Draw solid background color
-        if (el.backgroundColor) {
+        // STEP 1: Check for background media first
+        var hasBackgroundVideo = el.backgroundVideo && el.displayMode === 'video';
+        var hasBackgroundImage = el.backgroundImage && el.backgroundImage.length > 0;
+        var hasImageData = el.imageData && el.imageData.trim() !== '';
+        var hasAnyBackgroundMedia = hasBackgroundVideo || hasBackgroundImage || hasImageData;
+        
+        // STEP 2: Only draw solid background color if NO background media available
+        if (!hasAnyBackgroundMedia && el.backgroundColor) {
             ctx.fillStyle = el.backgroundColor;
             
             if (el.borderRadius > 0) {
@@ -31,10 +43,13 @@ var CanvasAction = (function() {
             }
         }
         
-        // STEP 2: Draw border
-        if (el.borderWidth > 0 && el.borderColor) {
-            ctx.strokeStyle = el.borderColor;
-            ctx.lineWidth = el.borderWidth;
+        // STEP 3: Draw NORMAL border (focus will be handled by CSS overlay)
+        var borderWidth = el.borderWidth > 0 ? el.borderWidth : 0;
+        var borderColor = el.borderColor || '#d9d9d9';
+        
+        if (borderWidth > 0) {
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = borderWidth;
             
             if (el.borderRadius > 0) {
                 CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
@@ -46,25 +61,117 @@ var CanvasAction = (function() {
         
         ctx.restore();
         
-        // STEP 3: Load background media asynchronously
-        var hasBackgroundVideo = el.backgroundVideo && el.displayMode === 'video';
-        var hasBackgroundImage = el.backgroundImage && el.backgroundImage.trim() !== '';
-        var hasImageData = el.imageData && el.imageData.trim() !== '';
-        
+        // STEP 4: Load background media asynchronously
         if (hasBackgroundVideo) {
             renderVideoBackgroundPlaceholder(ctx, el);
             drawActionText(ctx, el);
         } 
         else if (hasBackgroundImage) {
-            loadAndDrawActionBackground(ctx, el, el.backgroundImage, 'url');
+            var imgSrc = Array.isArray(el.backgroundImage) ? el.backgroundImage[0] : el.backgroundImage;
+            loadAndDrawActionBackground(ctx, el, imgSrc, 'url');
         } 
         else if (hasImageData) {
             var imgSrc = el.imageData.indexOf('data:') === 0 ? el.imageData : 'data:image/png;base64,' + el.imageData;
             loadAndDrawActionBackground(ctx, el, imgSrc, 'base64');
         }
         else {
-            // No background image, just draw text immediately
+            // No background image/video, just draw text immediately
             drawActionText(ctx, el);
+        }
+
+        // STEP 5: Create CSS overlay for focus (HTML element on top of canvas)
+        createFocusOverlay(el);
+    }
+
+    /**
+     * 🔥 NEW: Create CSS overlay for focus indication
+     * This overlay sits on top of canvas and shows/hides for focus
+     */
+    function createFocusOverlay(el) {
+        var elementId = el.id || el.name || 'action-' + Math.random();
+        
+        // Skip if overlay already exists
+        if (focusOverlays[elementId]) {
+            return;
+        }
+
+        var canvas = document.getElementById('templateCanvas');
+        if (!canvas) return;
+
+        var container = canvas.parentElement;
+        if (!container) return;
+
+        // Create overlay div
+        var overlay = document.createElement('div');
+        overlay.id = 'focus-overlay-' + elementId;
+        overlay.style.position = 'absolute';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.display = 'none'; // Hidden by default
+        overlay.style.zIndex = '1000';
+        
+        // Calculate position based on canvas size and element position
+        var canvasRect = canvas.getBoundingClientRect();
+        var canvasWidth = canvas.width;
+        var canvasHeight = canvas.height;
+        
+        // Calculate scale factor from design to display
+        var scaleX = canvasRect.width / canvasWidth;
+        var scaleY = canvasRect.height / canvasHeight;
+        
+        // Position overlay
+        overlay.style.left = (el.x * scaleX) + 'px';
+        overlay.style.top = (el.y * scaleY) + 'px';
+        overlay.style.width = (el.width * scaleX) + 'px';
+        overlay.style.height = (el.height * scaleY) + 'px';
+        
+        // Focus border styling
+        var focusBorderWidth = el.focusBorderWidth || 4;
+        var focusBorderColor = el.focusBorderColor || '#3b82f6';
+        var borderRadius = el.borderRadius || 0;
+        
+        overlay.style.border = focusBorderWidth + 'px solid ' + focusBorderColor;
+        overlay.style.borderRadius = (borderRadius * scaleX) + 'px';
+        overlay.style.boxSizing = 'border-box';
+        
+        // Optional: Add glow effect
+        overlay.style.boxShadow = '0 0 20px ' + focusBorderColor;
+        
+        // Add transition for smooth show/hide
+        overlay.style.transition = 'opacity 0.2s ease-in-out';
+        overlay.style.opacity = '0';
+        
+        container.appendChild(overlay);
+        focusOverlays[elementId] = overlay;
+        
+        console.log('[CanvasAction] Created focus overlay for:', elementId);
+    }
+
+    /**
+     * 🔥 NEW: Update focus overlays (show focused, hide others)
+     */
+    function updateFocusOverlays() {
+        // Hide all overlays first
+        for (var id in focusOverlays) {
+            if (focusOverlays.hasOwnProperty(id)) {
+                var overlay = focusOverlays[id];
+                overlay.style.display = 'none';
+                overlay.style.opacity = '0';
+            }
+        }
+        
+        // Show overlay for focused element
+        if (focusedIndex >= 0 && focusedIndex < actionElements.length) {
+            var focusedEl = actionElements[focusedIndex];
+            var elementId = focusedEl.id || focusedEl.name || 'action-unknown';
+            var focusedOverlay = focusOverlays[elementId];
+            
+            if (focusedOverlay) {
+                focusedOverlay.style.display = 'block';
+                // Use setTimeout to trigger CSS transition
+                setTimeout(function() {
+                    focusedOverlay.style.opacity = '1';
+                }, 10);
+            }
         }
     }
 
@@ -204,6 +311,27 @@ var CanvasAction = (function() {
         
         img.onerror = function() {
             console.warn('[CanvasAction] ❌ Background ' + sourceType + ' load failed:', elementData.name);
+            
+            // If background image fails to load, show background color as fallback
+            if (el.backgroundColor) {
+                ctx.save();
+                ctx.translate(el.x || 0, el.y || 0);
+                if (el.rotation) {
+                    ctx.translate(el.width / 2, el.height / 2);
+                    ctx.rotate(el.rotation * Math.PI / 180);
+                    ctx.translate(-el.width / 2, -el.height / 2);
+                }
+                
+                ctx.fillStyle = el.backgroundColor;
+                if (el.borderRadius > 0) {
+                    CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(0, 0, el.width, el.height);
+                }
+                ctx.restore();
+            }
+            
             drawActionText(ctx, el);
         };
         
@@ -260,8 +388,358 @@ var CanvasAction = (function() {
         console.log('[CanvasAction] Video background placeholder rendered:', el.name || el.id);
     }
 
+    /**
+     * Initialize action elements for navigation
+     */
+    function initializeNavigation(elements) {
+        actionElements = [];
+        
+        // Clear existing overlays
+        cleanup();
+        
+        // Filter only action type elements that are visible
+        for (var i = 0; i < elements.length; i++) {
+            var el = elements[i];
+            if ((el.type === 'action' || el.type === 'button' || el.type === 'card') && el.visible !== false) {
+                actionElements.push(el);
+            }
+        }
+        
+        // Sort by position (top to bottom, left to right)
+        actionElements.sort(function(a, b) {
+            var yDiff = (a.y || 0) - (b.y || 0);
+            if (Math.abs(yDiff) > 50) { // Same row threshold
+                return yDiff;
+            }
+            return (a.x || 0) - (b.x || 0);
+        });
+        
+        // Set initial focus
+        if (actionElements.length > 0) {
+            focusedIndex = 0;
+            updateFocusOverlays();
+        }
+        
+        console.log('[CanvasAction] Initialized navigation with', actionElements.length, 'action elements');
+    }
+
+    /**
+     * Find closest element in a direction
+     */
+    function findClosestInDirection(currentEl, direction) {
+        var currentX = currentEl.x + currentEl.width / 2;
+        var currentY = currentEl.y + currentEl.height / 2;
+        
+        var bestDistance = Infinity;
+        var bestIndex = -1;
+        
+        for (var i = 0; i < actionElements.length; i++) {
+            if (actionElements[i] === currentEl) continue;
+            
+            var el = actionElements[i];
+            var elX = el.x + el.width / 2;
+            var elY = el.y + el.height / 2;
+            
+            var isValid = false;
+            var distance = 0;
+            
+            if (direction === 'up') {
+                isValid = elY < currentY - 20; // Above current
+                distance = Math.sqrt(Math.pow(elX - currentX, 2) + Math.pow(elY - currentY, 2));
+            } else if (direction === 'down') {
+                isValid = elY > currentY + 20; // Below current
+                distance = Math.sqrt(Math.pow(elX - currentX, 2) + Math.pow(elY - currentY, 2));
+            } else if (direction === 'left') {
+                isValid = elX < currentX - 20; // Left of current
+                distance = Math.sqrt(Math.pow(elX - currentX, 2) + Math.pow(elY - currentY, 2));
+            } else if (direction === 'right') {
+                isValid = elX > currentX + 20; // Right of current
+                distance = Math.sqrt(Math.pow(elX - currentX, 2) + Math.pow(elY - currentY, 2));
+            }
+            
+            if (isValid && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+        
+        return bestIndex;
+    }
+
+    /**
+     * 🔥 OPTIMIZED: Move focus - NO CANVAS REDRAW, just update CSS overlays
+     */
+    function moveFocus(direction) {
+        if (actionElements.length === 0 || focusedIndex < 0) return false;
+        
+        var currentEl = actionElements[focusedIndex];
+        var newIndex = findClosestInDirection(currentEl, direction);
+        
+        if (newIndex >= 0) {
+            // Update focus index
+            focusedIndex = newIndex;
+            
+            // Update CSS overlays (NO CANVAS REDRAW!)
+            updateFocusOverlays();
+            
+            console.log('[CanvasAction] Focus moved to:', actionElements[focusedIndex].name || actionElements[focusedIndex].id);
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Execute action of focused element
+     */
+    function executeAction() {
+        if (focusedIndex < 0 || focusedIndex >= actionElements.length) {
+            console.warn('[CanvasAction] No focused element to execute');
+            return;
+        }
+        
+        var el = actionElements[focusedIndex];
+        
+        console.log('[CanvasAction] Executing action:', {
+            type: el.actionType,
+            value: el.actionValue,
+            text: el.text
+        });
+        
+        // Handle different action types
+        if (el.actionType === 'app') {
+            handleAppAction(el);
+        } else if (el.actionType === 'dynamicPage') {
+            handleDynamicPageAction(el);
+        } else if (el.actionType === 'url') {
+            handleUrlAction(el);
+        } else {
+            console.warn('[CanvasAction] Unknown action type:', el.actionType);
+        }
+    }
+
+    /**
+     * Handle app launch action
+     */
+    function handleAppAction(el) {
+        var appId = el.actionValue;
+        
+        console.log('[CanvasAction] Launching app:', appId);
+        
+        // Map of app IDs to launch functions
+        var appHandlers = {
+            'Netflix': function() {
+                if (typeof hcap !== 'undefined' && hcap.preloadedApplication) {
+                    hcap.preloadedApplication.launchPreloadedApplication({
+                        id: "244115188075859013",
+                        parameters: JSON.stringify({
+                            reason: "launcher",
+                            params: {
+                                hotel_id: "GRE1234",
+                                launcher_version: "1.0"
+                            }
+                        }),
+                        onSuccess: function() {
+                            console.log('[CanvasAction] Netflix launched successfully');
+                        },
+                        onFailure: function(err) {
+                            console.error('[CanvasAction] Netflix launch failed:', err.errorMessage);
+                        }
+                    });
+                }
+            },
+            'Youtube': function() {
+                if (typeof hcap !== 'undefined' && hcap.preloadedApplication) {
+                    hcap.preloadedApplication.launchPreloadedApplication({
+                        id: "144115188075859002",
+                        parameters: "{}",
+                        onSuccess: function() {
+                            console.log('[CanvasAction] YouTube launched successfully');
+                        },
+                        onFailure: function(err) {
+                            console.error('[CanvasAction] YouTube launch failed:', err.errorMessage);
+                        }
+                    });
+                }
+            },
+            'accuweather': function() {
+                if (typeof hcap !== 'undefined' && hcap.preloadedApplication) {
+                    hcap.preloadedApplication.launchPreloadedApplication({
+                        id: "144115188075855876",
+                        parameters: "{}",
+                        onSuccess: function() {
+                            console.log('[CanvasAction] AccuWeather launched successfully');
+                        },
+                        onFailure: function(err) {
+                            console.error('[CanvasAction] AccuWeather launch failed:', err.errorMessage);
+                        }
+                    });
+                }
+            },
+            'hdmi': function() {
+                if (typeof Main !== 'undefined') {
+                    Main.addBackData("MyDevice");
+                    view = "MyDevice";
+                    presentPagedetails.view = view;
+                    if (typeof Util !== 'undefined' && Util.DevicesSwitchPage) {
+                        Util.DevicesSwitchPage();
+                    }
+                }
+            },
+            'Cleardata': function() {
+                if (typeof Main !== 'undefined') {
+                    Main.popupData = {};
+                    Main.popupData.popuptype = "clearData";
+                    if (typeof macro !== 'undefined' && typeof Util !== 'undefined') {
+                        macro("#popUpFDFS").html(Util.clearDataPage());
+                        macro("#popupBtn-0").addClass('popupFocus');
+                    }
+                }
+            },
+            'com.guest.chromecast': function() {
+                if (typeof Main !== 'undefined' && Main.handleGoogleCast) {
+                    Main.handleGoogleCast();
+                }
+            },
+            'LGTV': function() {
+                if (typeof Main !== 'undefined' && Main.lgLgChannelIdApi) {
+                    Main.lgLgChannelIdApi(true);
+                }
+            },
+            'LIVETV': function() {
+                if (typeof Main !== 'undefined' && Main.liveTvChannelIdApi) {
+                    Main.liveTvChannelIdApi(true);
+                }
+            }
+        };
+        
+        // Execute app handler if exists
+        if (appHandlers[appId]) {
+            appHandlers[appId]();
+        } else {
+            console.warn('[CanvasAction] No handler for app:', appId);
+        }
+    }
+
+    /**
+     * Handle dynamic page action
+     */
+    function handleDynamicPageAction(el) {
+        var pageUuid = el.actionValue;
+        
+        console.log('[CanvasAction] Loading dynamic page:', pageUuid);
+        
+        if (typeof Main === 'undefined') {
+            console.error('[CanvasAction] Main object not available');
+            return;
+        }
+        
+        // Show loading
+        if (typeof Main.ShowLoading === 'function') {
+            Main.ShowLoading();
+        }
+        
+        // Fetch template data for the dynamic page
+        if (typeof macro !== 'undefined') {
+            macro.ajax({
+                url: apiPrefixUrl + "json-template?template_uuid=" + pageUuid,
+                type: "GET",
+                headers: {
+                    Authorization: "Bearer " + (pageDetails && pageDetails.access_token ? pageDetails.access_token : "")
+                },
+                success: function(response) {
+                    try {
+                        var result = typeof response === "string" ? JSON.parse(response) : response;
+                        
+                        if (result.status === true) {
+                            Main.jsonTemplateData = result.result;
+                            
+                            console.log('[CanvasAction] Template loaded successfully');
+                            
+                            // Hide loading
+                            if (typeof Main.HideLoading === 'function') {
+                                Main.HideLoading();
+                            }
+                            
+                            // Render the new template
+                            if (typeof macro !== 'undefined') {
+                                macro("#mainContent").html('');
+                                if (typeof Util !== 'undefined' && Util.ourHotelPage) {
+                                    macro("#mainContent").html(Util.ourHotelPage());
+                                    macro("#mainContent").show();
+                                }
+                            }
+                        } else {
+                            console.error('[CanvasAction] Template API returned status: false');
+                            if (typeof Main.HideLoading === 'function') {
+                                Main.HideLoading();
+                            }
+                        }
+                    } catch (parseError) {
+                        console.error('[CanvasAction] Failed to parse template response:', parseError);
+                        if (typeof Main.HideLoading === 'function') {
+                            Main.HideLoading();
+                        }
+                    }
+                },
+                error: function(err) {
+                    console.error('[CanvasAction] Template load failed:', err);
+                    if (typeof Main.HideLoading === 'function') {
+                        Main.HideLoading();
+                    }
+                },
+                timeout: 30000
+            });
+        }
+    }
+
+    /**
+     * Handle URL action
+     */
+    function handleUrlAction(el) {
+        var url = el.actionValue;
+        console.log('[CanvasAction] Opening URL:', url);
+        
+        // This would require browser integration
+        console.warn('[CanvasAction] URL actions not yet implemented for TV environment');
+    }
+
+    /**
+     * Get focused element
+     */
+    function getFocusedElement() {
+        if (focusedIndex >= 0 && focusedIndex < actionElements.length) {
+            return actionElements[focusedIndex];
+        }
+        return null;
+    }
+
+    /**
+     * Cleanup overlays
+     */
+    function cleanup() {
+        console.log('[CanvasAction] Cleaning up focus overlays');
+        
+        for (var id in focusOverlays) {
+            if (focusOverlays.hasOwnProperty(id)) {
+                var overlay = focusOverlays[id];
+                if (overlay && overlay.parentNode) {
+                    overlay.parentNode.removeChild(overlay);
+                }
+            }
+        }
+        
+        focusOverlays = {};
+    }
+
     // Public API
     return {
-        render: render
+        render: render,
+        initializeNavigation: initializeNavigation,
+        moveFocus: moveFocus,
+        executeAction: executeAction,
+        getFocusedElement: getFocusedElement,
+        cleanup: cleanup
     };
 })();

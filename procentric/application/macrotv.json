@@ -107,6 +107,22 @@
         {
             "FileName": "javascript/canvas-renderers/canvas-shapes.js",
             "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-scaler.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-label.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-ticker.js",
+            "VersionNo": 0.1
+        },
+        {
+            "FileName": "javascript/canvas-renderers/canvas-rss.js",
+            "VersionNo": 0.1
         }
     ],
     "mainFiles": [

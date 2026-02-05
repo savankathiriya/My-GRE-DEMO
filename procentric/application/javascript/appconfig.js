@@ -14,6 +14,25 @@ function getKeyCode(rawEvt) {
     return { evt: evt, keycode: kc };
 }
 
+function showLoadingPopup() {
+    var el = document.getElementById("loadingPopup");
+    if(el) el.style.display = "block";
+
+    initLottieOnce();
+    if(loadingAnim && typeof loadingAnim.play === 'function') {
+        loadingAnim.play();
+    }
+}
+
+function hideLoadingPopup() {
+    var el = document.getElementById("loadingPopup");
+    if (el) el.style.display = 'none';
+
+    if (loadingAnim && typeof loadingAnim.stop === 'function') {
+        loadingAnim.stop();
+    }
+}
+
 utilities.updatingTimeAndDate = function () {
 
     function pad(num) {

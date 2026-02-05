@@ -1,7 +1,8 @@
 /**
  * ====================================================================
- * CANVAS RENDERER - OPTIMIZED FOR SELECTIVE CLOCK UPDATES
- * Only re-renders clock elements, not the entire canvas
+ * CANVAS RENDERER - PROPER FIX FOR LG PRO:CENTRIC TV
+ * Issue: TV picture mode was causing overscan - solution is proper scaling
+ * NO artificial padding - let CanvasScaler handle everything correctly
  * ====================================================================
  */
 
@@ -13,7 +14,7 @@ var CanvasRenderer = (function() {
     var templateData = null;
     var scaleX = 1;
     var scaleY = 1;
-    var clockElements = []; // Store only clock elements
+    var clockElements = [];
     var animationFrameId = null;
 
     /**
@@ -45,16 +46,45 @@ var CanvasRenderer = (function() {
         }
 
         // Get template data
+        var originalTemplateData;
         try {
-            templateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            originalTemplateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
         } catch (e) {
             console.error('[CanvasRenderer] Error accessing template data:', e);
             return;
         }
 
-        if (!templateData || !templateData.canvas || !templateData.elements) {
+        if (!originalTemplateData || !originalTemplateData.canvas || !originalTemplateData.elements) {
             console.error('[CanvasRenderer] Invalid template_json structure');
             return;
+        }
+
+        // 🔥 PROPER FIX: Use exact window dimensions, let CanvasScaler handle everything
+        var screenW = window.innerWidth;
+        var screenH = window.innerHeight;
+        var designW = originalTemplateData.canvas.width  || 1920;
+        var designH = originalTemplateData.canvas.height || 1080;
+
+        console.log('[CanvasRenderer] Screen:', screenW + 'x' + screenH);
+        console.log('[CanvasRenderer] Design:', designW + 'x' + designH);
+
+        // Initialize CanvasScaler with EXACT screen dimensions
+        if (typeof CanvasScaler !== 'undefined') {
+            CanvasScaler.initialize(screenW, screenH, designW, designH, 'fit');
+            
+            // Scale the entire template data
+            templateData = CanvasScaler.scaleTemplateData(originalTemplateData);
+            
+            var scaleInfo = CanvasScaler.getScaleInfo();
+            console.log('[CanvasRenderer] ✅ CanvasScaler - Scale:', scaleInfo.scaleX.toFixed(4), 'x', scaleInfo.scaleY.toFixed(4));
+        } else {
+            // Fallback to old method if CanvasScaler not loaded
+            console.warn('[CanvasRenderer] ⚠️ CanvasScaler not found, using legacy scaling');
+            templateData = originalTemplateData;
+            
+            scaleX = screenW / designW;
+            scaleY = screenH / designH;
+            console.log('[CanvasRenderer] Legacy Scale:', scaleX.toFixed(3), 'x', scaleY.toFixed(3));
         }
 
         var canvasConfig = templateData.canvas;
@@ -62,25 +92,24 @@ var CanvasRenderer = (function() {
 
         console.log('[CanvasRenderer] Template loaded - Elements:', elements.length);
 
-        // Setup canvas dimensions & scaling
-        var screenW = window.innerWidth;
-        var screenH = window.innerHeight;
-        var designW = canvasConfig.width  || 1920;
-        var designH = canvasConfig.height || 1080;
-        
-        scaleX = screenW / designW;
-        scaleY = screenH / designH;
-
-        console.log('[CanvasRenderer] Screen:', screenW + 'x' + screenH, 'Design:', designW + 'x' + designH);
-        console.log('[CanvasRenderer] Scale:', scaleX.toFixed(3), 'x', scaleY.toFixed(3));
-
+        // Set canvas to EXACT screen size
         canvas.width  = screenW;
         canvas.height = screenH;
-        canvas.style.width  = '100%';
-        canvas.style.height = '100%';
+        canvas.style.width  = screenW + 'px';
+        canvas.style.height = screenH + 'px';
+        canvas.style.position = 'fixed';
+        canvas.style.top = '0px';
+        canvas.style.left = '0px';
+        canvas.style.margin = '0';
+        canvas.style.padding = '0';
 
+        // Reset transform - NO OFFSET, NO EXTRA TRANSLATION
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(scaleX, scaleY);
+        
+        // Only apply ctx.scale if CanvasScaler wasn't used
+        if (typeof CanvasScaler === 'undefined') {
+            ctx.scale(scaleX, scaleY);
+        }
 
         // Sort elements by zIndex for proper layering
         var sortedElements = elements.slice().sort(function(a, b) {
@@ -103,10 +132,10 @@ var CanvasRenderer = (function() {
         
         if (bgType === 'image' && canvasConfig.backgroundImage) {
             // Background is an image - render it first, THEN render elements
-            renderBackgroundThenElements(ctx, canvasConfig, designW, designH, sortedElements, canvas);
+            renderBackgroundThenElements(ctx, canvasConfig, canvasConfig.width, canvasConfig.height, sortedElements, canvas);
         } else {
             // Background is a color or video placeholder - render immediately
-            CanvasBackground.render(ctx, canvasConfig, designW, designH);
+            CanvasBackground.render(ctx, canvasConfig, canvasConfig.width, canvasConfig.height);
             // Then render all elements immediately
             renderAllElements(ctx, sortedElements, canvas);
         }
@@ -145,7 +174,7 @@ var CanvasRenderer = (function() {
         bgImg.crossOrigin = 'anonymous';
         
         bgImg.onload = function() {
-            console.log('[CanvasRenderer] Ã¢Å“â€¦ Background image loaded, rendering...');
+            console.log('[CanvasRenderer] ✅ Background image loaded, rendering...');
             
             // Draw background image
             ctx.save();
@@ -153,14 +182,14 @@ var CanvasRenderer = (function() {
             CanvasBase.drawImageWithFit(ctx, bgImg, 0, 0, width, height, fit);
             ctx.restore();
             
-            console.log('[CanvasRenderer] Ã¢Å“â€¦ Background rendered, now rendering elements...');
+            console.log('[CanvasRenderer] ✅ Background rendered, now rendering elements...');
             
             // NOW render all elements on top of the background
             renderAllElements(ctx, sortedElements, canvas);
         };
         
         bgImg.onerror = function() {
-            console.warn('[CanvasRenderer] Ã¢Å¡Â Ã¯Â¸Â Background image failed to load, rendering elements anyway');
+            console.warn('[CanvasRenderer] ❌ Background image failed to load, rendering elements anyway');
             // Still render elements even if background fails
             renderAllElements(ctx, sortedElements, canvas);
         };
@@ -190,9 +219,17 @@ var CanvasRenderer = (function() {
             }
         }
         
-        console.log('[CanvasRenderer] Ã¢Å“â€¦ All elements rendered');
-    }
+        console.log('[CanvasRenderer] ✅ All elements rendered');
 
+        // 🔥 APPLY ANIMATIONS AFTER ALL ELEMENTS ARE RENDERED
+        setTimeout(function() {
+            if (typeof CanvasAnimation !== 'undefined') {
+                console.log('[CanvasRenderer] Applying animations to elements');
+                CanvasAnimation.applyAllAnimations(sortedElements, canvas);
+            }
+        }, 100);
+    }
+    
     /**
      * Render a single element
      */
@@ -248,6 +285,19 @@ var CanvasRenderer = (function() {
             case 'star':
                 CanvasShapes.render(ctx, el);
                 break;
+            
+            // NEW ELEMENTS
+            case 'label':
+                CanvasLabel.render(ctx, el);
+                break;
+                
+            case 'rss':
+                CanvasRss.render(ctx, el, canvas);
+                break;
+                
+            case 'ticker':
+                CanvasTicker.render(ctx, el, canvas);
+                break;
                 
             default:
                 console.warn('[CanvasRenderer] Unknown element type:', el.type);
@@ -290,22 +340,23 @@ var CanvasRenderer = (function() {
     }
 
     /**
-     * Ã°Å¸â€Â¥ UPDATE ONLY CLOCK ELEMENTS (SELECTIVE RENDERING)
-     * This is much more efficient than re-rendering the entire canvas
+     * 🔥 UPDATE ONLY CLOCK ELEMENTS (SELECTIVE RENDERING)
      */
     function updateClocks() {
         if (!ctx || !currentCanvas || clockElements.length === 0) {
             return;
         }
 
-        console.log('[CanvasRenderer] Ã¢ÂÂ±Ã¯Â¸Â Updating', clockElements.length, 'clock elements only...');
-
         // Save the current canvas state
         ctx.save();
         
-        // Re-apply scaling
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-        ctx.scale(scaleX, scaleY);
+        // Re-apply scaling if using legacy mode
+        if (typeof CanvasScaler === 'undefined') {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(scaleX, scaleY);
+        } else {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
 
         // Update each clock element
         for (var i = 0; i < clockElements.length; i++) {
@@ -325,8 +376,6 @@ var CanvasRenderer = (function() {
         }
 
         ctx.restore();
-        
-        console.log('[CanvasRenderer] Ã¢Å“â€¦ Clock elements updated at', new Date().toLocaleTimeString());
     }
 
     /**
@@ -344,11 +393,10 @@ var CanvasRenderer = (function() {
     }
 
     /**
-     * Ã°Å¸â€Â¥ OPTIMIZED ANIMATION LOOP - ONLY UPDATES CLOCKS
-     * Does NOT re-render the entire canvas
+     * 🔥 OPTIMIZED ANIMATION LOOP - ONLY UPDATES CLOCKS
      */
     function startAnimationLoop() {
-        console.log('[CanvasRenderer] Ã°Å¸â€â€ž Starting OPTIMIZED animation loop (clocks only)...');
+        console.log('[CanvasRenderer] 🎬 Starting animation loop (clocks only)...');
         
         // Stop any existing animation
         if (animationFrameId) {
@@ -357,10 +405,10 @@ var CanvasRenderer = (function() {
 
         // Update only clocks every second
         animationFrameId = setInterval(function() {
-            updateClocks(); // Only updates clock elements, not entire canvas
+            updateClocks();
         }, 1000);
 
-        console.log('[CanvasRenderer] Ã¢Å“â€¦ Optimized animation loop started - updating clocks only (not entire canvas)');
+        console.log('[CanvasRenderer] ✅ Animation loop started');
     }
 
     /**
@@ -370,7 +418,7 @@ var CanvasRenderer = (function() {
         if (animationFrameId) {
             clearInterval(animationFrameId);
             animationFrameId = null;
-            console.log('[CanvasRenderer] Ã¢ÂÂ¹Ã¯Â¸Â Animation loop stopped');
+            console.log('[CanvasRenderer] ⏹️ Animation loop stopped');
         }
     }
 
@@ -385,6 +433,15 @@ var CanvasRenderer = (function() {
         }
         if (typeof CanvasSlideshow !== 'undefined' && CanvasSlideshow.cleanup) {
             CanvasSlideshow.cleanup();
+        }
+        if (typeof CanvasAction !== 'undefined' && CanvasAction.cleanup) {
+            CanvasAction.cleanup();
+        }
+        if (typeof CanvasRss !== 'undefined' && CanvasRss.cleanup) {
+            CanvasRss.cleanup();
+        }
+        if (typeof CanvasTicker !== 'undefined' && CanvasTicker.cleanup) {
+            CanvasTicker.cleanup();
         }
     }
 
