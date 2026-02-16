@@ -292,55 +292,63 @@ Util.homePageHtml = function () {
 };
 
 Util.DevicesSwitchPage = function () {
-
   // // try hcap external input discovery
-  // if(typeof hcap !== "undefined" && hcap.externalinput) {
-  //   try {
-  //     hcap.externalinput.getExternalInputList({
-  //       onSuccess: function (s) {
-  //         var connectedInputs = [];
-  //         var pending = (s && s.list) ? s.list.length : 0;
-  //         console.log("s------------->", s.list)
-  //         if(pending === 0) return buildPage([]);
+  if(typeof hcap !== "undefined" && hcap.externalinput) {
+    try {
+      hcap.externalinput.getExternalInputList({
+        onSuccess: function (s) {
+          var connectedInputs = [];
+          var pending = (s && s.list) ? s.list.length : 0;
+          console.log("s------------->", s.list)
+          if(pending === 0) return buildPage([]);
 
-  //         s.list.forEach(function (input) {
-  //           try {
-  //             hcap.externalinput.isExternalInputConnected({
-  //               type: input.type,
-  //               index: input.index,
-  //               onSuccess: function (res) {
-  //                 if (res && res.isConnected) connectedInputs.push(input);
-  //                 if(--pending === 0) buildPage(connectedInputs);
-  //               },
-  //               onFailure: function () {
-  //                 if(--pending === 0) buildPage(connectedInputs)
-  //               }
-  //             })
-  //           } catch (e) {
-  //             if (--pending === 0) buildPage(connectedInputs)
-  //           }
-  //         });
-  //       },
-  //       onFailure: function () {
-  //         buildPage([]);
-  //       }
-  //     })
-  //   } catch (e) {
-  //     buildPage([]);
-  //   }
-  // } else {
-  //   var dummyInputs = [
-  //     { name: "HDMI 1", type: "HDMI", index: 0 },
-  //     { name: "HDMI 2", type: "HDMI", index: 1 }
-  //   ];
-  //   buildPage(dummyInputs, true);
-  // }
+          s.list.forEach(function (input) {
+            try {
+              hcap.externalinput.isExternalInputConnected({
+                type: input.type,
+                index: input.index,
+                onSuccess: function (res) {
+                  console.log("res------------------------>", res)
+                  if (res && res.isConnected) connectedInputs.push(input);
+                  console.log("called--------------------->", connectedInputs)
+                  if(--pending === 0) buildPage(connectedInputs);
+                },
+                onFailure: function () {
+                  console.log("not called--------------------->", connectedInputs)
+                  if(--pending === 0) buildPage(connectedInputs)
+                }
+              })
+            } catch (e) {
+              console.log("catch1 called------------------>", connectedInputs);
+              if (--pending === 0) buildPage(connectedInputs)
+            }
+          });
+        },
+        onFailure: function () {
+          console.log("onfuilaur called------------------->")
+          buildPage([]);
+        }
+      })
+    } catch (e) {
+      console.log("catch called----------------->")
+      buildPage([]);
+    }
+  } else {
+    var dummyInputs = [
+      { name: "HDMI 1", type: "HDMI", index: 0 },
+      { name: "HDMI 2", type: "HDMI", index: 1 }
+    ];
+    console.log("dummyInput called------------------>", dummyInputs);
+    buildPage(dummyInputs, true);
+  }
 
-  buildPage();
+  // buildPage();
 
-  // function buildPage(connectedInputs, isFallback) {
-  function buildPage() {
-    // connectedInputs = connectedInputs || [];
+  function buildPage(connectedInputs, isFallback) {
+  // function buildPage() {
+
+  console.log("connectedInputs--------------------->", connectedInputs);
+    connectedInputs = connectedInputs || [];
 
     //boxed panel width 1192 x 315 centered
     var Text = '';
@@ -355,34 +363,34 @@ Util.DevicesSwitchPage = function () {
     Text += '    <div class="device-row">';
 
     // render discovered HDMI inputs (or placeholders)
-    // var rendered = 0;
-    // for(var i = 0; i < connectedInputs.length; i++){
-    //   var input = connectedInputs[i];
-    //   var label = input.name || ("HDMI " + (input.index + 1));
-    //   var typeAttr = isFallback ? "HDMI" : input.type;
-    //   var indexAttr = isFallback ? i : input.index;
+    var rendered = 0;
+    for(var i = 0; i < connectedInputs.length; i++){
+      var input = connectedInputs[i];
+      var label = input.name || ("HDMI " + (input.index + 1));
+      var typeAttr = isFallback ? "HDMI" : input.type;
+      var indexAttr = isFallback ? i : input.index;
 
-    //   Text += '      <div class="device-card menu-btn card-type-hdmi" id="device-btn-' + rendered + '" data-action="input" data-type="' + typeAttr + '" data-index="' + indexAttr + '">';
-    //   Text += '        <div class="device-icon"><img src="images/hdmi-port.png" alt="' + label + '" /></div>';
-    //   Text += '        <div class="device-label">' + label + '</div>';
-    //   Text += '      </div>';
-    //   rendered++;
-    // }
+      Text += '      <div class="device-card menu-btn card-type-hdmi" id="device-btn-' + rendered + '" data-action="input" data-type="' + typeAttr + '" data-index="' + indexAttr + '">';
+      Text += '        <div class="device-icon"><img src="images/hdmi-port.png" alt="' + label + '" /></div>';
+      Text += '        <div class="device-label">' + label + '</div>';
+      Text += '      </div>';
+      rendered++;
+    }
 
     // place Bluetooth then Restart so final row becomes exactly: [HDMI cards...] [Bluetooth] [Restart]
-    // var bluetoothIndex = rendered;
-    Text += '      <div class="device-card menu-btn card-type-bluetooth" id="device-btn-' + 0 + '" data-action="bluetooth">';
+    var bluetoothIndex = rendered;
+    Text += '      <div class="device-card menu-btn card-type-bluetooth" id="device-btn-' + bluetoothIndex + '" data-action="bluetooth">';
     Text += '        <div class="device-icon"><img src="images/bluetooth.png" alt="Bluetooth" /></div>';
     Text += '        <div class="device-label">Bluetooth</div>';
     Text += '      </div>';
-    // rendered++;
+    rendered++;
 
-    // var restartIndex = rendered;
-    Text += '      <div class="device-card menu-btn card-type-restart" id="device-btn-' + 1 + '" data-action="restart">';
+    var restartIndex = rendered;
+    Text += '      <div class="device-card menu-btn card-type-restart" id="device-btn-' + restartIndex + '" data-action="restart">';
     Text += '        <div class="device-icon"><img src="images/restart.png" alt="Restart" /></div>';
     Text += '        <div class="device-label">Restart TV</div>';
     Text += '      </div>';
-    // rendered++;
+    rendered++;
 
     Text += '    </div>'; // device-row
     Text += '  </div>';   // device-panel
@@ -1403,24 +1411,27 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
 
 /**
  * ====================================================================
- * ENHANCED UTIL.OURHOTELPAGE
- * Includes automatic navigation initialization
- * Add this to your pages.js file, replacing the existing Util.ourHotelPage
+ * PAGES.JS - COMPLETE FIX FOR OURHOTELPAGE
+ * ✅ REMOVES FLEXBOX CENTERING
+ * ✅ SIMPLE CONTAINER STRUCTURE
+ * ✅ WORKS ON LG TV HARDWARE
  * ====================================================================
  */
 
 Util.ourHotelPage = function () {
     var html = '';
     
-    // 🔥 FIX: Use pixel values and add flexbox centering for overscan compensation
-    html += '<div id="our-hotel-container" style="position:fixed; top:0; left:0; width:' + window.innerWidth + 'px; height:' + window.innerHeight + 'px; background:#000; z-index:1000; margin:0; padding:0; overflow:hidden; display:flex; align-items:center; justify-content:center;">';
-    html += '  <canvas id="templateCanvas" style="display:block; position:absolute; top:0; left:0;"></canvas>';
+    // ✅ COMPLETE FIX: Remove ALL flexbox centering
+    // Use simple fixed positioning with 100% width/height
+    html += '<div id="our-hotel-container" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:1000; margin:0; padding:0; overflow:hidden;">';
+    html += '  <canvas id="templateCanvas" style="display:block; position:absolute; top:0; left:0; margin:0; padding:0;"></canvas>';
     html += '</div>';
 
     // Render canvas after DOM is fully ready
     setTimeout(function() {
         try {
             console.log('[OurHotel] Starting canvas render...');
+            console.log('[OurHotel] Window size:', window.innerWidth, 'x', window.innerHeight);
             
             // Clean up any existing overlays from previous visits
             if (typeof CanvasRss !== 'undefined' && CanvasRss.cleanup) {
@@ -1437,6 +1448,9 @@ Util.ourHotelPage = function () {
             }
             if (typeof CanvasAction !== 'undefined' && CanvasAction.cleanup) {
                 CanvasAction.cleanup();
+            }
+            if (typeof CanvasVideo !== 'undefined' && CanvasVideo.cleanup) {
+                CanvasVideo.cleanup();
             }
             
             // Render the canvas

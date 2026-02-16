@@ -27,48 +27,8 @@ Main.processTrigger = function (rawEvent) {
   var evt = info.evt;
   var keycode = info.keycode;
 
-  if (keycode === tvKeyCode.Power || keycode === 19) {
-    console.log("POWER key pressed");
 
-    // 🔴 BLOCK EARLY POWER (FIRST BOOT FIX)
-    if (!window.__APP_READY_FOR_POWER__) {
-      console.warn("[POWER] Ignored – app not ready yet");
-      if (rawEvent) {
-        rawEvent.preventDefault && rawEvent.preventDefault();
-        rawEvent.stopImmediatePropagation && rawEvent.stopImmediatePropagation();
-        rawEvent.stopPropagation && rawEvent.stopPropagation();
-      }
-      return false;
-    }
-
-    // 🔥 NORMAL WARM MODE HANDLING
-    if (window.hcap && hcap.power) {  
-      hcap.power.getPowerMode({
-        onSuccess: function (res) {
-          console.log("[POWER] Current mode:", res.mode);
-
-          if (res.mode === hcap.power.PowerMode.NORMAL) {
-            hcap.power.powerOff({
-              onSuccess: function () {
-                console.log("[POWER] Entered Warm Mode");
-              },
-              onFailure: function (f) {
-                console.error("[POWER] powerOff failed:", f && f.errorMessage);
-    }
-            });
-          }
-        }
-      });
-    }
-
-    if (rawEvent) {
-      rawEvent.preventDefault && rawEvent.preventDefault();
-      rawEvent.stopImmediatePropagation && rawEvent.stopImmediatePropagation();
-      rawEvent.stopPropagation && rawEvent.stopPropagation();
-  }
-
-    return false;
-  }
+  console.log("called----------------------------------------------->", keycode, "current view:", view);
 
 
   // =================================================
@@ -1422,7 +1382,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
 
 
 
-      if(result.status === true) {
+      // if(result.status === true) {
         Main.liveTvChannelMetaDetails = result.result;
 
         // Set up metadata refresh interval (5 minutes)
@@ -1451,8 +1411,8 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
           presentPagedetails.liveTvChannelMetaDetails = result.result;
           presentPagedetails.liveTvChannelIdDetails = channelIdDetails;
 
-          if( Main.liveTvChannelIdDetails && Main.liveTvChannelIdDetails[0] && Main.liveTvChannelIdDetails[0].ch_url) {
-            var chUrl = Main.liveTvChannelIdDetails[0].ch_url;
+          if( Main.liveTvChannelIdDetails && Main.liveTvChannelIdDetails[0] && Main.liveTvChannelIdDetails[0].lg_ch_url) {
+            var chUrl = Main.liveTvChannelIdDetails[0].lg_ch_url;
 
             // Check if it's a UDP IP channel (e.g., "udp://239.74.48.14:8013")
             if(/^udp:\/\/\d{1,3}(\.\d{1,3}){3}:\d+$/.test(chUrl)) {
@@ -1489,7 +1449,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
                 channelType: hcap.channel.ChannelType.RF,
                 majorNumber: majorNumber,
                 minorNumber: minorNumber,
-                rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
                 onSuccess: function () {
                   macro('.live-tv-guide-container').css('display', 'none');
                   console.log('[Live TV] Successfully switched to RF channel:', majorNumber + '-' + minorNumber);
@@ -1510,7 +1470,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
               hcap.channel.requestChangeCurrentChannel({
                 channelType: hcap.channel.ChannelType.RF,
                 logicalNumber: logicalNumber,
-                rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
                 onSuccess: function () {
                   macro('.live-tv-guide-container').css('display', 'none');
                   console.log('[Live TV] Successfully switched to logical channel:', logicalNumber);
@@ -1550,7 +1510,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
             );
           }, 10000);
         }
-      }
+      // }
       Main.HideLoading();
     },
     error: function (err) {

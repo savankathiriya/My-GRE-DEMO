@@ -1,7 +1,9 @@
 /**
  * ====================================================================
- * CANVAS GIF ELEMENT RENDERER (FIXED FOR ANIMATION)
- * Handles animated GIF elements using HTML overlay method
+ * CANVAS GIF ELEMENT RENDERER - COMPLETE LG TV FIX
+ * ✅ MATCHES VIDEO POSITIONING
+ * ✅ WORKS ON ACTUAL LG TV HARDWARE
+ * ✅ NO BLACK GAPS
  * ====================================================================
  */
 
@@ -34,8 +36,7 @@ var CanvasGif = (function() {
     }
 
     /**
-     * Render animated GIF using HTML img element overlay
-     * This method creates an actual <img> element for proper GIF animation
+     * ✅ COMPLETE FIX: Position GIF correctly on LG TV (matches video approach)
      */
     function renderAnimated(ctx, el, canvas) {
         if (!el.src) {
@@ -44,11 +45,19 @@ var CanvasGif = (function() {
         }
         
         console.log('[CanvasGif] Creating animated GIF overlay:', el.name || el.id);
+        console.log('[CanvasGif] GIF source:', el.src);
         
-        // Get canvas scaling factor
-        var canvasRect = canvas.getBoundingClientRect();
-        var scaleX = canvasRect.width / canvas.width;
-        var scaleY = canvasRect.height / canvas.height;
+        // Get canvas container
+        var container = canvas.parentElement;
+        if (!container) {
+            console.error('[CanvasGif] No parent container found for canvas');
+            return;
+        }
+        
+        // ✅ Element positions are ALREADY SCALED by CanvasScaler
+        // We just need to position relative to canvas which is at 0,0
+        console.log('[CanvasGif] Element position (already scaled):', el.x, ',', el.y);
+        console.log('[CanvasGif] Element size (already scaled):', el.width, 'x', el.height);
         
         // Create img element overlay for GIF animation
         var gifOverlay = document.createElement('img');
@@ -56,57 +65,148 @@ var CanvasGif = (function() {
         gifOverlay.className = 'gif-overlay-element';
         gifOverlay.setAttribute('data-element-id', el.id || el.name);
         
-        // Positioning and sizing
+        // ✅ FIX: Use EXACT scaled coordinates (no additional calculation needed)
+        var left = Math.floor(el.x);
+        var top = Math.floor(el.y);
+        var width = Math.ceil(el.width);
+        var height = Math.ceil(el.height);
+        
+        console.log('[CanvasGif] GIF overlay position:');
+        console.log('[CanvasGif]   left:', left + 'px');
+        console.log('[CanvasGif]   top:', top + 'px');
+        console.log('[CanvasGif]   width:', width + 'px');
+        console.log('[CanvasGif]   height:', height + 'px');
+        
+        // ✅ CRITICAL: Use ABSOLUTE positioning relative to container (same as video)
         gifOverlay.style.position = 'absolute';
-        gifOverlay.style.left = (el.x * scaleX) + 'px';
-        gifOverlay.style.top = (el.y * scaleY) + 'px';
-        gifOverlay.style.width = (el.width * scaleX) + 'px';
-        gifOverlay.style.height = (el.height * scaleY) + 'px';
+        gifOverlay.style.left = left + 'px';
+        gifOverlay.style.top = top + 'px';
+        gifOverlay.style.width = width + 'px';
+        gifOverlay.style.height = height + 'px';
+        
+        // Remove all margins and padding
+        gifOverlay.style.margin = '0';
+        gifOverlay.style.padding = '0';
+        gifOverlay.style.border = 'none';
+        gifOverlay.style.outline = 'none';
+        
+        // Box sizing
+        gifOverlay.style.boxSizing = 'border-box';
+        
+        // Ensure GIF is visible
+        gifOverlay.style.display = 'block';
+        gifOverlay.style.visibility = 'visible';
         
         // Opacity
-        gifOverlay.style.opacity = (typeof el.opacity !== 'undefined' ? el.opacity : 1);
+        var opacity = (typeof el.opacity !== 'undefined' ? el.opacity : 1);
+        gifOverlay.style.opacity = opacity;
+        console.log('[CanvasGif]   opacity:', opacity);
         
         // Prevent interaction
         gifOverlay.style.pointerEvents = 'none';
         
         // Z-index
-        gifOverlay.style.zIndex = el.zIndex || 'auto';
+        var zIndex = el.zIndex || 'auto';
+        gifOverlay.style.zIndex = zIndex;
+        console.log('[CanvasGif]   zIndex:', zIndex);
         
         // Object fit (similar to canvas drawImageWithFit)
-        gifOverlay.style.objectFit = el.objectFit || 'contain';
+        var objectFit = el.objectFit || 'contain';
+        gifOverlay.style.objectFit = objectFit;
+        console.log('[CanvasGif]   objectFit:', objectFit);
+        
+        // ✅ Hardware acceleration for smooth animation on LG TV
+        gifOverlay.style.transform = 'translate3d(0, 0, 0)';
+        gifOverlay.style.webkitTransform = 'translate3d(0, 0, 0)';
         
         // Border radius
-        if (el.borderRadius) {
-            gifOverlay.style.borderRadius = el.borderRadius + 'px';
+        if (el.borderRadius && el.borderRadius > 0) {
+            var radius = Math.round(el.borderRadius);
+            gifOverlay.style.borderRadius = radius + 'px';
+            gifOverlay.style.overflow = 'hidden';
+            console.log('[CanvasGif]   borderRadius:', radius + 'px');
         }
         
         // Rotation
-        if (el.rotation) {
-            gifOverlay.style.transform = 'rotate(' + el.rotation + 'deg)';
+        if (el.rotation && el.rotation !== 0) {
+            var currentTransform = gifOverlay.style.transform;
+            gifOverlay.style.transform = currentTransform + ' rotate(' + el.rotation + 'deg)';
             gifOverlay.style.transformOrigin = 'center center';
+            console.log('[CanvasGif]   rotation:', el.rotation + 'deg');
         }
         
-        // Add to DOM
-        var container = canvas.parentElement;
-        if (container) {
+        // Event listeners for debugging
+        gifOverlay.addEventListener('load', function() {
+            console.log('[CanvasGif] ✓ GIF loaded successfully:', el.name || el.id);
+        });
+        
+        gifOverlay.addEventListener('error', function() {
+            console.error('[CanvasGif] ✗ GIF failed to load:', el.name || el.id);
+            console.error('[CanvasGif] GIF src:', el.src);
+            showGifError(gifOverlay, el);
+        });
+        
+        // ✅ Ensure container is positioned relatively
+        if (!container.style.position || container.style.position === 'static') {
             container.style.position = 'relative';
-            container.appendChild(gifOverlay);
-            
-            console.log('[CanvasGif] ✅ Animated GIF overlay created:', el.name || el.id);
-        } else {
-            console.error('[CanvasGif] No parent container found for canvas');
         }
+        
+        // ✅ Add to container (not body, same as video)
+        container.appendChild(gifOverlay);
+        
+        console.log('[CanvasGif] ✓ Animated GIF overlay created and added to container');
+    }
+
+    /**
+     * Show error message when GIF fails to load
+     */
+    function showGifError(gifElement, el) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gif-error-overlay';
+        errorDiv.style.position = 'absolute';
+        errorDiv.style.left = gifElement.style.left;
+        errorDiv.style.top = gifElement.style.top;
+        errorDiv.style.width = gifElement.style.width;
+        errorDiv.style.height = gifElement.style.height;
+        errorDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        errorDiv.style.color = '#ff6b6b';
+        errorDiv.style.display = 'flex';
+        errorDiv.style.flexDirection = 'column';
+        errorDiv.style.alignItems = 'center';
+        errorDiv.style.justifyContent = 'center';
+        errorDiv.style.fontSize = '18px';
+        errorDiv.style.padding = '20px';
+        errorDiv.style.textAlign = 'center';
+        errorDiv.style.zIndex = gifElement.style.zIndex;
+        errorDiv.innerHTML = '⚠️<br><br>GIF Load Failed<br><br><small style="color:#aaa;">Check console for details</small>';
+        
+        gifElement.style.display = 'none';
+        gifElement.parentElement.appendChild(errorDiv);
     }
 
     /**
      * Clean up all GIF overlays (call this before re-rendering)
      */
     function cleanup() {
+        console.log('[CanvasGif] Cleaning up GIF overlays');
+        
         var overlays = document.querySelectorAll('.gif-overlay-element');
+        console.log('[CanvasGif] Found', overlays.length, 'GIF overlays to clean up');
+        
         for (var i = 0; i < overlays.length; i++) {
-            overlays[i].parentNode.removeChild(overlays[i]);
+            if (overlays[i].parentNode) {
+                overlays[i].parentNode.removeChild(overlays[i]);
+            }
         }
-        console.log('[CanvasGif] Cleaned up', overlays.length, 'GIF overlays');
+        
+        var errors = document.querySelectorAll('.gif-error-overlay');
+        for (var j = 0; j < errors.length; j++) {
+            if (errors[j].parentNode) {
+                errors[j].parentNode.removeChild(errors[j]);
+            }
+        }
+        
+        console.log('[CanvasGif] Cleanup complete');
     }
 
     // Public API

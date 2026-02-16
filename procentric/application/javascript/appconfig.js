@@ -1,6 +1,136 @@
 var utilities = {};
 var clockIntervalId = null;
 
+// HDMI Connection Monitoring
+var currentHdmiType = null;
+var currentHdmiIndex = null;
+
+function startHdmiMonitor(type, index) {
+    console.log('[HDMI Monitor] Starting monitor for type:', type, 'index:', index);
+    currentHdmiType = type;
+    currentHdmiIndex = index;
+    stopHdmiMonitor();
+}
+
+function stopHdmiMonitor() {
+    console.log('[HDMI Monitor] Stopping monitor');
+    currentHdmiType = null;
+    currentHdmiIndex = null;
+}
+
+// Reset HDMI and app state on application startup
+function resetHdmiOnStartup() {
+    console.log('[App Startup] Resetting HDMI state...');
+    
+    // Stop any existing monitoring
+    stopHdmiMonitor();
+    
+    // Clear state variables
+    window._originalTvInput = null;
+    if (typeof presentPagedetails !== 'undefined') {
+        presentPagedetails.currentLiveChannelId = undefined;
+        presentPagedetails.showingLiveTvGuide = false;
+    }
+    
+    // Ensure we're in HCAP_MODE_1 (normal mode)
+    if (typeof hcap !== "undefined" && hcap.mode) {
+        hcap.mode.getHcapMode({
+            onSuccess: function(result) {
+                console.log('[App Startup] Current HCAP mode:', result.mode);
+                
+                if (result.mode !== hcap.mode.HCAP_MODE_1) {
+                    console.log('[App Startup] Switching to HCAP_MODE_1...');
+                    hcap.mode.setHcapMode({
+                        mode: hcap.mode.HCAP_MODE_1,
+                        onSuccess: function() {
+                            console.log('[App Startup] ✅ Set to HCAP_MODE_1');
+                            ensureTvInput();
+                        },
+                        onFailure: function(f) {
+                            console.warn('[App Startup] Failed to set HCAP_MODE_1:', f);
+                            ensureTvInput();
+                        }
+                    });
+                } else {
+                    console.log('[App Startup] Already in HCAP_MODE_1');
+                    ensureTvInput();
+                }
+            },
+            onFailure: function(f) {
+                console.warn('[App Startup] Failed to get HCAP mode:', f);
+                // Try to set MODE_1 anyway
+                if (hcap.mode.setHcapMode) {
+                    hcap.mode.setHcapMode({
+                        mode: hcap.mode.HCAP_MODE_1,
+                        onSuccess: function() {
+                            console.log('[App Startup] ✅ Set to HCAP_MODE_1 (fallback)');
+                            ensureTvInput();
+                        },
+                        onFailure: function(f2) {
+                            console.warn('[App Startup] Fallback mode set failed:', f2);
+                            ensureTvInput();
+                        }
+                    });
+                }
+            }
+        });
+    } else {
+        console.warn('[App Startup] HCAP not available');
+    }
+    
+    function ensureTvInput() {
+        // Make sure we're on TV input, not HDMI
+        if (typeof hcap !== "undefined" && hcap.externalinput) {
+            hcap.externalinput.getCurrentExternalInput({
+                onSuccess: function(current) {
+                    console.log('[App Startup] Current input - Type:', current.type, 'Index:', current.index);
+                    
+                    // If we're on HDMI, switch back to TV
+                    if (current.type === hcap.externalinput.ExternalInputType.HDMI) {
+                        console.log('[App Startup] Currently on HDMI, switching to TV...');
+                        hcap.externalinput.setCurrentExternalInput({
+                            type: hcap.externalinput.ExternalInputType.TV,
+                            index: 0,
+                            onSuccess: function() {
+                                console.log('[App Startup] ✅ Switched to TV input');
+                                document.body.style.background = "#000";
+                            },
+                            onFailure: function(f) {
+                                console.warn('[App Startup] Failed to switch to TV:', f);
+                                document.body.style.background = "#000";
+                            }
+                        });
+                    } else {
+                        console.log('[App Startup] Already on TV input');
+                        document.body.style.background = "#000";
+                    }
+                },
+                onFailure: function(f) {
+                    console.warn('[App Startup] Failed to get current input:', f);
+                    // Try to switch to TV anyway as fallback
+                    if (hcap.externalinput.setCurrentExternalInput) {
+                        hcap.externalinput.setCurrentExternalInput({
+                            type: hcap.externalinput.ExternalInputType.TV,
+                            index: 0,
+                            onSuccess: function() {
+                                console.log('[App Startup] ✅ Switched to TV (fallback)');
+                                document.body.style.background = "#000";
+                            },
+                            onFailure: function(f2) {
+                                console.warn('[App Startup] Fallback switch failed:', f2);
+                                document.body.style.background = "#000";
+                            }
+                        });
+                    }
+                }
+            });
+        } else {
+            console.warn('[App Startup] External input API not available');
+            document.body.style.background = "#000";
+        }
+    }
+}
+
 utilities.validateString = function (value) {
     if (value == undefined || value == null) return false;
     else if (value.trim() == '') return false;
@@ -12,6 +142,45 @@ function getKeyCode(rawEvt) {
     // prefer which when available and non-zero, else fallback to keyCode
     var kc = (typeof evt.which !== 'undefined' && evt.which !== 0) ? evt.which : evt.keyCode || 0;
     return { evt: evt, keycode: kc };
+}
+
+function clearNoSignalNative() {
+    try {
+        // Shut down any active HCAP media pipeline
+        if (window.hcap && hcap.Media && hcap.Media.shutDown) {
+            hcap.Media.shutDown({
+                onSuccess: function () { console.log("Media.shutDown success"); },
+                onFailure: function (f) { console.warn("Media.shutDown fail", f); }
+            });
+        }
+    } catch (e) {
+        console.warn("clearNoSignalNative Media.shutDown threw", e);
+    }
+
+    try {
+        // Release current channel if tuner/IP channel was opened
+        if (window.hcap && hcap.channel && hcap.channel.releaseCurrentChannel) {
+            hcap.channel.releaseCurrentChannel({
+                onSuccess: function () { console.log("releaseCurrentChannel success"); },
+                onFailure: function (f) { console.warn("releaseCurrentChannel fail", f); }
+            });
+        }
+    } catch (e) {
+        console.warn("clearNoSignalNative releaseCurrentChannel threw", e);
+    }
+
+    try {
+        // Reset HCAP mode back to normal app mode
+        if (window.hcap && hcap.mode && hcap.mode.setHcapMode) {
+            hcap.mode.setHcapMode({
+                mode: hcap.mode.HCAP_MODE_1,
+                onSuccess: function () { console.log("setHcapMode success"); },
+                onFailure: function (f) { console.warn("setHcapMode fail", f); }
+            });
+        }
+    } catch (e) {
+        console.warn("clearNoSignalNative setHcapMode threw", e);
+    }
 }
 
 function showLoadingPopup() {
@@ -39,54 +208,84 @@ utilities.updatingTimeAndDate = function () {
         return num < 10 ? '0' + num : num;
     }
 
-    function formatTime(date, format){
-        var hours24 = date.getHours();
-        var hours12 = hours24 % 12 || 12;
-        var minutes = date.getMinutes();
-        var seconds = date.getSeconds();
+    function formatTimeFromParts(parts, format) {
+        var map = {};
+        parts.forEach(function (p) {
+            map[p.type] = p.value;
+        });
 
         var tokens = {
-            'hh': pad(hours12),
-            'HH': pad(hours24),
-            'mm': pad(minutes),
-            'ss': pad(seconds)
-        }
+            'hh': pad(map.hour12),
+            'HH': pad(map.hour),
+            'mm': pad(map.minute),
+            'ss': pad(map.second)
+        };
 
-        return format.replace(/hh|HH|mm|ss/g, function(match) {
+        return format.replace(/hh|HH|mm|ss/g, function (match) {
             return tokens[match];
         });
     }
 
     function updateDateTime() {
-        var now = new Date();
 
-        // Get time format and remove any trailing 'a' or 'A' (am/pm indicator)
-        var rawFormat = (Main.templateApiData && Main.templateApiData.time_format)
-            ? Main.templateApiData.time_format : 'HH:mm';
-        
+        // 🔹 Get timezone dynamically
+        var timeZone =
+            (Main.deviceProfile && Main.deviceProfile.property_detail.property_timezone)
+                ? Main.deviceProfile.property_detail.property_timezone
+                : Intl.DateTimeFormat().resolvedOptions().timeZone; // fallback
+
+        // 🔹 Get raw format (HH:mm, hh:mm a, etc.)
+        var rawFormat =
+            (Main.templateApiData && Main.templateApiData.time_format)
+                ? Main.templateApiData.time_format
+                : 'HH:mm';
+
+        // Remove AM/PM if present (you already wanted this)
         var timeFormat = rawFormat.replace(/\s*[aA]$/, '');
 
-        // Format time and date
-        var timeStr = formatTime(now, timeFormat);
-        var dateStr = now.toLocaleDateString(undefined, {
+        // 🔹 Get time parts for the given timezone
+        var timeFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timeZone,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: rawFormat.indexOf('hh') !== -1
+        });
+
+        var timeParts = timeFormatter.formatToParts(new Date());
+
+        // Add hour12 manually for formatting support
+        var hourPart = timeParts.find(p => p.type === 'hour');
+        var hour12 = (parseInt(hourPart.value, 10) % 12) || 12;
+        timeParts.push({ type: 'hour12', value: hour12 });
+
+        var timeStr = formatTimeFromParts(timeParts, timeFormat);
+
+        // 🔹 Date (timezone-aware)
+        var dateFormatter = new Intl.DateTimeFormat(undefined, {
+            timeZone: timeZone,
             weekday: 'long',
             month: 'long',
             day: 'numeric'
         });
 
-        // Update DOM
-        var timeE1 = document.getElementById("time_now");
-        var dateE1 = document.getElementById("date_now");
+        var dateStr = dateFormatter.format(new Date());
 
-        if(timeE1) { timeE1.textContent = timeStr; }
-        if(dateE1) { dateE1.textContent = dateStr; }
+        // 🔹 Update DOM
+        var timeEl = document.getElementById("time_now");
+        var dateEl = document.getElementById("date_now");
+
+        if (timeEl) timeEl.textContent = timeStr;
+        if (dateEl) dateEl.textContent = dateStr;
     }
 
-    //Initial call
+    // Initial call
     updateDateTime();
-    // Start the interval and store the ID
+
+    // Update every second
     clockIntervalId = setInterval(updateDateTime, 1000);
-}
+};
+
 
 utilities.genricPopup=function(msg,type){
   Main.popupData ={
@@ -132,9 +331,11 @@ function launchApp(appId,source) {
                 "noSplash": false // set true if you want to skip splash
             },
             "onSuccess": function () {
+                Main.HideLoading();
                 console.log(" App launched successfully:", appId);
             },
             "onFailure": function (err) {
+                launchApp(appId,source);
                 console.log(" Failed to launch app:", err.errorMessage);
             }
         });
@@ -162,24 +363,26 @@ function ensureAppInstalled(appId, source) {
     idcap.request("idcap://application/list", {
         "parameters": { "exteraInfo": true },
         "onSuccess": function (s) {
-            // var foundApp = s.list.find( function (app) {
-            //     return app.appId === appId;
-            // });
+            var foundApp = s.list.find( function (app) {
+                return app.appId === appId;
+            });
+
+            Main.ShowLoading();
 
             console.log("s------------------->", s);
 
-            // if(foundApp) {
-            //     if(foundApp.installed) {
-            //         console.log(" " + appId + " already installed.");
-            //         // Optionally auto-launch
-            //         launchApp(appId,source);
-            //     } else {
-            //         console.log("📥 " + appId + " found but not installed, installing...");
-            //         installApp(appId, source);
-            //     }
-            // } else {
-            //     console.log(" " + appId + " not found in available apps.");
-            // }
+            if(foundApp) {
+                if(foundApp.installed) {
+                    console.log(" " + appId + " already installed.");
+                    // Optionally auto-launch
+                    launchApp(appId,source);
+                } else {
+                    console.log("📥 " + appId + " found but not installed, installing...");
+                    installApp(appId, source);
+                }
+            } else {
+                console.log(" " + appId + " not found in available apps.");
+            }
         },
         "onFailure": function (err) {
             console.log("Failed to get app list:", err.errorMessage);

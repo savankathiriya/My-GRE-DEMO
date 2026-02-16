@@ -484,6 +484,30 @@ Navigation.homePageNavigation = function (event) {
           }
         })
       }
+      else if(appUrl === "com.fubotv.app") {
+        ensureAppInstalled("com.fubotv.app");
+      }
+      else if(appUrl === "com.haystacktv.app") {
+        ensureAppInstalled("com.haystacktv.app");
+      }
+      else if(appUrl === "com.5403008.196062") {
+        ensureAppInstalled("com.5403008.196062");
+      }
+      else if(appUrl === "tv.amasian.webos.na1.commercial") {
+        ensureAppInstalled("tv.amasian.webos.na1.commercial");
+      }
+      else if(appUrl === "com.webos.app.commercial.clock") {
+        ensureAppInstalled("com.webos.app.commercial.clock");
+      }
+      else if(appUrl === "cdp") {
+        ensureAppInstalled("cdp");
+      }
+      else if(appUrl === "com.aajtak.app") {
+        ensureAppInstalled("com.aajtak.app");
+      }
+      else if(appUrl === "com.airwave.lg") {
+        ensureAppInstalled("com.airwave.lg");
+      }
       else if(appUrl === "Cleardata") {
         Main.popupData = {}
         Main.popupData.popuptype = "clearData"
@@ -723,73 +747,103 @@ Navigation.deviceSwitchNavigation = function (event) {
       break;
     }
     case tvKeyCode.Enter: {
-      console.log("Enter called------------------>")
       var el = document.getElementById(id);
-      console.log("el---------------------->", el.getAttribute("data-action"))
       if (!el) break;
 
       var action = el.getAttribute("data-action");
 
-      console.log("action----------------->", action)
+      if(action === "input") {
+        var attr = el.getAttribute("data-type");
+        var type = isNaN(parseInt(attr, 10)) ? attr : parseInt(attr, 10);
+        var index = parseInt(el.getAttribute("data-index"), 10);
 
-      // if(action === "input") {
-      //   console.log("input called------------------------>")
-      //   var attr = el.getAttribute("data-type");
-      //   var type = isNaN(parseInt(attr, 10)) ? attr : parseInt(attr, 10);
-      //   var index = parseInt(el.getAttribute("data-index"), 10);
+        console.log('[HDMI] Entering HDMI input mode - type:', type, 'index:', index);
 
-      //   console.log("type,index--------->", type , index)
+        // âœ… STEP 1: Save original input FIRST
+        if (typeof hcap !== "undefined" && hcap.externalinput) {
+          try {
+            hcap.externalinput.getCurrentExternalInput({
+              onSuccess: function(res) {
+                window._originalTvInput = {
+                  type: res.type,
+                  index: res.index
+                };
+                console.log('[HDMI] âœ… Saved original input:', window._originalTvInput);
+              },
+              onFailure: function(f) {
+                console.warn('[HDMI] Failed to get current input:', f);
+                // Default fallback - assume TV input
+                window._originalTvInput = {
+                  type: hcap.externalinput.ExternalInputType.TV,
+                  index: 0
+                };
+                console.log('[HDMI] Using fallback input:', window._originalTvInput);
+              }
+            });
+          } catch(e) {
+            console.warn('[HDMI] Exception getting current input:', e);
+            window._originalTvInput = {
+              type: 1, // TV type
+              index: 0
+            };
+          }
+        }
 
-      //   // Save current Devices page for Back navigation
-      //   Main.addBackData("liveTv");
+        // STEP 2: Save back data and set view
+        Main.addBackData("liveTv");
+        view = "liveTv";
+        presentPagedetails.view = view;
 
-      //   // Show controlled blank screen (transition placeholder)
-      //   macro("#mainContent").html(Util.hdmiInputEmptyPage());
-      //   macro("#mainContent").show();
-      //   document.body.style.background = "none";
+        // STEP 3: Show empty page
+        macro("#mainContent").html(Util.hdmiInputEmptyPage());
+        macro("#mainContent").show();
+        document.body.style.background = "none";
 
-      //   // Update page details
-      //   presentPagedetails = {};
-      //   presentPagedetails.view = "liveTv";
-      //   view = "liveTv";
-
-      //   if (typeof hcap !== "undefined" && hcap.externalinput) {
-      //     hcap.mode.setHcapMode({
-      //       mode: hcap.mode.HCAP_MODE_2,
-      //       onSuccess: function () {
-
-      //         // switch HDMI Input
-      //         hcap.externalinput.setCurrentExternalInput({
-      //           type: type,
-      //           index: index,
-      //           onSuccess: function () {
-      //             console.log("Switched to input type=" + type + " index=" + index);
-      //           },
-      //           onFailure: function (f) {
-      //             console.log("Switch failed: " + f.errorMessage);
-      //             Main.previousPage()
-      //             hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
-      //           } 
-      //         });
-      //       },
-      //       onFailure: function (f) {
-      //         console.log("Failed to set HCAP mode: " + f.errorMessage);
-      //         Main.previousPage()
-      //         hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
-      //       }
-      //     });
-      //   }
-      // }
-      if (action === "restart") {
+        // STEP 4: Switch to HDMI input
+        if (typeof hcap !== "undefined" && hcap.externalinput) {
+          hcap.mode.setHcapMode({
+            mode: hcap.mode.HCAP_MODE_2,
+            onSuccess: function () {
+              console.log('[HDMI] Set HCAP_MODE_2 successfully');
+              
+              // Switch HDMI Input
+              hcap.externalinput.setCurrentExternalInput({
+                type: type,
+                index: index,
+                onSuccess: function () {
+                  console.log('[HDMI] Switched to HDMI input type=' + type + ' index=' + index);
+                  startHdmiMonitor(type, index);
+                },
+                onFailure: function (f) {
+                  console.error('[HDMI] Switch failed: ' + f.errorMessage);
+                  Main.previousPage();
+                  hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+                  window._originalTvInput = null;
+                } 
+              });
+            },
+            onFailure: function (f) {
+              console.error('[HDMI] Failed to set HCAP mode: ' + f.errorMessage);
+              Main.previousPage();
+              hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+              window._originalTvInput = null;
+            }
+          });
+        } else {
+          console.warn('[HDMI] HCAP not available');
+          Main.previousPage();
+        }
+      }
+      else if (action === "restart") {
         rebootTv();
       }
       else {
         ensureAppInstalled("com.webos.app.btspeakerapp");
       }
-
       break;
     }
     case tvKeyCode.Exit: {
+      stopHdmiMonitor();
       // Stop any HCAP media and restore normal mode, then go back
       try { stopAndClearMedia(); } catch(e){ console.warn('stopAndClearMedia failed', e); }
 
@@ -807,6 +861,7 @@ Navigation.deviceSwitchNavigation = function (event) {
     case tvKeyCode.Return:
     case 10009: {
       // Stop any HCAP media and restore normal mode, then go back
+      stopHdmiMonitor();
       try { stopAndClearMedia(); } catch(e){ console.warn('stopAndClearMedia failed', e); }
 
       try { Main.previousPage(); } catch(e) { console.warn('Main.previousPage threw', e); }
@@ -827,32 +882,137 @@ Navigation.deviceSwitchNavigation = function (event) {
 
 Navigation.EmptyLiveNavigation = function (event) {
   var keycode = (window.event) ? event.keyCode : event.which;
+  
   switch (keycode) {
-    case tvKeyCode.ArrowLeft: {
-      break;
-    }
-    case tvKeyCode.ArrowRight: {
-      break;
-    }
-    case tvKeyCode.ArrowUp: {
-      break;
-    }
-    case tvKeyCode.ArrowDown: {
-      break;
-    }
-    case tvKeyCode.ChannelUp: {
-      break;
-    }
-    case tvKeyCode.ChannelDown: {
-      break;
-    }
+    case tvKeyCode.ArrowLeft:
+    case tvKeyCode.ArrowRight:
+    case tvKeyCode.ArrowUp:
+    case tvKeyCode.ArrowDown:
+    case tvKeyCode.ChannelUp:
+    case tvKeyCode.ChannelDown:
     case tvKeyCode.Enter: {
       break;
     }
+    
     case 8:
     case tvKeyCode.Return:
     case tvKeyCode.Exit:
     case 10009: {
+      console.log('[HDMI Exit] Starting HDMI exit sequence from EmptyLiveNavigation...');
+      stopHdmiMonitor();
+      
+      // Step 1: Switch back to original TV input to stop HDMI audio
+      if (typeof hcap !== "undefined" && hcap.externalinput) {
+        try {
+          var originalInput = window._originalTvInput || {
+            type: hcap.externalinput.ExternalInputType.TV,
+            index: 0
+          };
+          
+          console.log('[HDMI Exit] Switching back to original input:', originalInput);
+          
+          hcap.externalinput.setCurrentExternalInput({
+            type: originalInput.type,
+            index: originalInput.index,
+            onSuccess: function () {
+              console.log('[HDMI Exit] âœ… Successfully restored original input - HDMI audio stopped');
+              
+              // Step 2: Set HCAP mode back to normal
+              try {
+                hcap.mode.setHcapMode({
+                  mode: hcap.mode.HCAP_MODE_1,
+                  onSuccess: function() {
+                    console.log('[HDMI Exit] âœ… Successfully set HCAP_MODE_1');
+                    
+                    // Step 3: Navigate back to previous page
+                    try { 
+                      Main.previousPage(); 
+                      document.body.style.background = "#000";
+                    } catch(e) { 
+                      console.warn('[HDMI Exit] Main.previousPage threw', e); 
+                    }
+                    
+                    // Clear saved input
+                    window._originalTvInput = null;
+                  },
+                  onFailure: function(f) {
+                    console.warn('[HDMI Exit] Failed to set HCAP_MODE_1:', f);
+                    // Still navigate back even if mode change fails
+                    try { 
+                      Main.previousPage(); 
+                      document.body.style.background = "#000";
+                    } catch(e) {}
+                    window._originalTvInput = null;
+                  }
+                });
+              } catch(e) {
+                console.warn('[HDMI Exit] setHcapMode threw exception:', e);
+                try { 
+                  Main.previousPage(); 
+                  document.body.style.background = "#000";
+                } catch(e2) {}
+                window._originalTvInput = null;
+              }
+            },
+            onFailure: function (f) {
+              console.error('[HDMI Exit] âŒ Failed to restore original input:', f.errorMessage);
+              
+              // Even if input switch fails, still try to clean up and go back
+              try {
+                hcap.mode.setHcapMode({ 
+                  mode: hcap.mode.HCAP_MODE_1,
+                  onSuccess: function() {
+                    console.log('[HDMI Exit] Mode set to 1 despite input switch failure');
+                  },
+                  onFailure: function(f2) {
+                    console.warn('[HDMI Exit] Mode change also failed:', f2);
+                  }
+                });
+              } catch(e) {
+                console.warn('[HDMI Exit] Mode change exception:', e);
+              }
+              
+              try { 
+                Main.previousPage(); 
+                document.body.style.background = "#000";
+              } catch(e) {
+                console.warn('[HDMI Exit] Navigation failed:', e);
+              }
+              
+              window._originalTvInput = null;
+            }
+          });
+        } catch(e) {
+          console.error('[HDMI Exit] âŒ Exception during HDMI exit:', e);
+          
+          // Fallback cleanup
+          try { 
+            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 }); 
+          } catch(e2) {
+            console.warn('[HDMI Exit] Fallback mode change failed:', e2);
+          }
+          
+          try { 
+            Main.previousPage(); 
+            document.body.style.background = "#000";
+          } catch(e2) {
+            console.warn('[HDMI Exit] Fallback navigation failed:', e2);
+          }
+          
+          window._originalTvInput = null;
+        }
+      } else {
+        // No HCAP available - just navigate back
+        console.warn('[HDMI Exit] âš ï¸ HCAP not available - simple navigation (audio may continue)');
+        
+        try { 
+          Main.previousPage(); 
+          document.body.style.background = "#000";
+        } catch(e) {
+          console.warn('[HDMI Exit] Simple navigation failed:', e);
+        }
+      }
+      
       break;
     }
   }
@@ -1765,8 +1925,8 @@ Navigation.demoPlayers = function (event) {
           presentPagedetails.currentLiveChannelId = channelUuid;
           
           // Play the selected channel (UDP)
-          if (selectedChannel.ch_url) {
-            var chUrl = selectedChannel.ch_url;
+          if (selectedChannel.lg_ch_url) {
+            var chUrl = selectedChannel.lg_ch_url;
 
             if(/^udp:\/\/\d{1,3}(\.\d{1,3}){3}:\d+$/.test(chUrl)) {
               var urlWithoutPrefix = chUrl.replace("udp://", ""); // "239.74.48.14:8013"
@@ -1800,7 +1960,7 @@ Navigation.demoPlayers = function (event) {
                 channelType: hcap.channel.ChannelType.RF,
                 majorNumber: majorNumber,
                 minorNumber: minorNumber,
-                rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
                 onSuccess: function () {
                   console.log('[Live TV] Successfully switched to RF channel:', majorNumber + '-' + minorNumber);
                 },
@@ -1819,7 +1979,7 @@ Navigation.demoPlayers = function (event) {
               hcap.channel.requestChangeCurrentChannel({
                 channelType: hcap.channel.ChannelType.RF,
                 logicalNumber: logicalNumber,
-                rfBroadcastType: hcap.channel.RfBroadcastType.TERRESTRIAL,
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
                 onSuccess: function () {
                   console.log('[Live TV] Successfully switched to logical channel:', logicalNumber);
                 },
@@ -2057,4 +2217,261 @@ Navigation.scrollLiveTvChannelIntoView = function(channelIndex) {
       });
     }
   }, 50);
+};
+
+function clearWarmSleepTimer() {
+    try {
+      if (warmSleepTimerId) {
+        clearInterval(warmSleepTimerId);
+        warmSleepTimerId = null;
+      }
+      warmSleepStartTs = null;
+      try {
+        // persist cleanup (safe if localStorage not available)
+        localStorage.removeItem('gx_warmSleepStartTs');
+      } catch (e) {
+        console.log('localStorage removeItem failed (gx_warmSleepStartTs):', e);
+      }
+    } catch (e) {
+      console.log('clearWarmSleepTimer error:', e);
+    }
+}
+  
+function startWarmSleepTimer() {
+    // clear any existing timer first
+    clearWarmSleepTimer();
+  
+    try {
+      warmSleepStartTs = Date.now();
+      try {
+        localStorage.setItem('gx_warmSleepStartTs', String(warmSleepStartTs));
+      } catch (e) {
+        console.log('localStorage setItem failed (gx_warmSleepStartTs):', e);
+      }
+  
+      // Check every 60 seconds instead of one huge 24h timeout
+      warmSleepTimerId = setInterval(function () {
+        if (!isWarmMode) {
+          // no longer in warm mode → stop checking
+          clearWarmSleepTimer();
+          return;
+        }
+  
+        var now = Date.now();
+        if (warmSleepStartTs && (now - warmSleepStartTs) >= WARM_SLEEP_RESET_MS) {
+          console.log('📆 24 hours in WARM reached — calling appStart()');
+          clearWarmSleepTimer();
+  
+          try {
+            appStart();
+          } catch (e) {
+            console.error('Error calling appStart() after 24h warm:', e);
+          }
+        }
+      }, 60 * 1000); // every 1 minute
+    } catch (e) {
+      console.log('startWarmSleepTimer error:', e);
+    }
+}
+  
+
+Navigation.handlePowerKey = function() {
+    // var info = getKeyCode(rawEvt || window.event);
+    // var evt = info.evt;
+    // try { evt.preventDefault && evt.preventDefault(); } catch (_) {}
+  
+    console.log("Global Power key pressed — handling warm/normal toggle...");
+  
+    if (!window.hcap || !hcap.power || !hcap.power.setPowerMode) {
+      console.warn("hcap.power API not available on this device; cannot toggle warm mode.");
+      return;
+    }
+  
+    function stopPlaybackThen(next) {
+      // (your existing stopCurrentChannel + HCAP_MODE_1 + mute logic)
+      if (hcap.channel && typeof hcap.channel.stopCurrentChannel === 'function') {
+        try {
+          hcap.channel.stopCurrentChannel({
+            onSuccess: function() {
+              console.log("stopCurrentChannel success");
+              if (hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+                try {
+                  hcap.mode.setHcapMode({
+                    mode: hcap.mode.HCAP_MODE_1,
+                    onSuccess: function() {
+                      console.log("hcap.mode set to HCAP_MODE_1");
+                      if (typeof next === 'function') next();
+                    },
+                    onFailure: function(f) {
+                      console.warn("Failed to set HCAP_MODE_1:", f && f.errorMessage);
+                      if (typeof next === 'function') next();
+                    }
+                  });
+                } catch (e) {
+                  console.warn("Exception calling hcap.mode.setHcapMode:", e);
+                  if (typeof next === 'function') next();
+                }
+              } else {
+                if (typeof next === 'function') next();
+              }
+            },
+            onFailure: function(f) {
+              console.warn("stopCurrentChannel failed:", f && f.errorMessage);
+              if (hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+                try {
+                  hcap.mode.setHcapMode({
+                    mode: hcap.mode.HCAP_MODE_1,
+                    onSuccess: function() {
+                      console.log("hcap.mode set to HCAP_MODE_1 (after stop failed)");
+                      if (typeof next === 'function') next();
+                    },
+                    onFailure: function(ff) {
+                      console.warn("Failed to set HCAP_MODE_1 (after stop failed):", ff && ff.errorMessage);
+                      if (typeof next === 'function') next();
+                    }
+                  });
+                } catch (e) {
+                  console.warn("Exception calling hcap.mode.setHcapMode:", e);
+                  if (typeof next === 'function') next();
+                }
+              } else {
+                if (typeof next === 'function') next();
+              }
+            }
+          });
+          return;
+        } catch (e) {
+          console.warn("Exception calling stopCurrentChannel:", e);
+        }
+      }
+  
+      if (hcap.audio && typeof hcap.audio.setMute === 'function') {
+        try {
+          hcap.audio.setMute({
+            mute: true,
+            onSuccess: function() {
+              console.log("hcap.audio.setMute(true) succeeded");
+              if (typeof next === 'function') next();
+            },
+            onFailure: function(f) {
+              console.warn("hcap.audio.setMute failed:", f && f.errorMessage);
+              if (typeof next === 'function') next();
+            }
+          });
+          return;
+        } catch (e) {
+          console.warn("Exception calling hcap.audio.setMute:", e);
+        }
+      }
+  
+      if (typeof next === 'function') next();
+    }
+  
+    function unmuteIfPossible() {
+      if (hcap.audio && typeof hcap.audio.setMute === 'function') {
+        try {
+          hcap.audio.setMute({
+            mute: false,
+            onSuccess: function(){ console.log("hcap.audio.setMute(false) success"); },
+            onFailure: function(f){ console.warn("unmute failed:", f && f.errorMessage); }
+          });
+        } catch (e) {
+          console.warn("Exception calling hcap.audio.setMute(false):", e);
+        }
+      }
+    }
+  
+    try {
+      hcap.power.getPowerMode({
+        onSuccess: function(s) {
+          var cur = s && s.mode;
+  
+          if (cur !== hcap.power.PowerMode.WARM) {
+            // Going to WARM — stop playback first then set WARM
+            stopPlaybackThen(function() {
+              try {
+                hcap.power.setPowerMode({
+                  mode: hcap.power.PowerMode.WARM,
+                  onSuccess: function() {
+                    isWarmMode = true;
+                    disableNavigation = true;
+                    console.log("Switched to WARM mode (panel off, app still running)");
+  
+                    // 🔹 START 24h TIMER HERE
+                    startWarmSleepTimer();
+                  },
+                  onFailure: function(f) {
+                    console.error("Failed to set WARM mode:", f && f.errorMessage);
+                  }
+                });
+              } catch (e) {
+                console.error("Exception calling setPowerMode(WARM):", e);
+              }
+            });
+          } else {
+            // Currently WARM -> set NORMAL, then unmute/restore
+            try {
+              hcap.power.setPowerMode({
+                mode: hcap.power.PowerMode.NORMAL,
+                onSuccess: function() {
+                  isWarmMode = false;
+                  disableNavigation = false;
+                  console.log("Switched back to NORMAL mode (panel + board on)");
+  
+                  // 🔹 CLEAR 24h TIMER HERE (because user came back before timeout)
+                  clearWarmSleepTimer();
+  
+                  if (hcap.mode && typeof hcap.mode.setHcapMode === 'function' &&
+                      typeof hcap.mode.HCAP_MODE_2 !== 'undefined') {
+                    try {
+                      hcap.mode.setHcapMode({
+                        mode: hcap.mode.HCAP_MODE_1,
+                        onSuccess: function(){},
+                        onFailure: function(){}
+                      });
+                    } catch (e) {}
+                  }
+
+                  console.log("view inside------------------------------------------>", view)
+  
+                  unmuteIfPossible();
+                  try { exitLiveTv(); } catch (e) { console.warn("exitLiveTv error after NORMAL:", e); }
+                },
+                onFailure: function(f) {
+                  console.error("Failed to set NORMAL mode:", f && f.errorMessage);
+                }
+              });
+            } catch (e) {
+              console.error("Exception calling setPowerMode(NORMAL):", e);
+            }
+          }
+        },
+        onFailure: function(f) {
+          console.warn("hcap.power.getPowerMode failed:", f && f.errorMessage);
+          // fallback: attempt to stop playback then set WARM
+          stopPlaybackThen(function() {
+            try {
+              hcap.power.setPowerMode({
+                mode: hcap.power.PowerMode.WARM,
+                onSuccess: function() {
+                  isWarmMode = true;
+                  disableNavigation = true;
+                  console.log("Switched to WARM mode (panel off) [fallback]");
+  
+                  // 🔹 also start timer in fallback
+                  startWarmSleepTimer();
+                },
+                onFailure: function(ff) {
+                  console.error("Fallback set WARM failed:", ff && ff.errorMessage);
+                }
+              });
+            } catch (e) {
+              console.error("Exception trying fallback setPowerMode(WARM):", e);
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.error("Exception in handlePowerKey main try:", e);
+    }
 };

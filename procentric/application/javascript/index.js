@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.130"
+	appVersion:"v1.220"
 };
 var loadFilePaths = 'macrotv.json';
 var scount = 0, mainCount = 0;
@@ -21,10 +21,13 @@ var tvKeyCode = {
 	Exit: 1001,
 	Guide: 458
 };
-var deviceMac = '1cf43ff843b4';
+var deviceMac = null;
+// var deviceMac = '1cf43ff843b4';
 var deviceIp  = null;
-
-window.__APP_READY_FOR_POWER__ = false;
+var warmSleepTimerId = null;
+var warmSleepStartTs = null;
+var isWarmMode = false;
+var WARM_SLEEP_RESET_MS = 24 * 60 * 60 * 1000;
 
 function _isValidIp(ip) {
   return typeof ip === "string" &&
@@ -42,10 +45,6 @@ function showGettingMacScreen() {
     // Display a centered please-wait message (adapt HTML/CSS to your app)
     macro("#mainContent").html('<div id="mac-wait"">Please wait</div>');
     macro("#mainContent").show();
-
-    setTimeout(function () {
-      enableMode2Safely();
-    }, 500);
 }
 
 function showMacErrorScreen() {
@@ -63,45 +62,6 @@ function showMacErrorScreen() {
         clearMacTimers();
         startMacAcquisitionFlow();
     });
-}
-
-function enableMode2Safely() {
-  if (!window.hcap || !hcap.power || !hcap.mode) return;
-
-  console.log("[STARTUP] Ensuring NORMAL mode before MODE_2");
- 
-  hcap.power.getPowerMode({
-    onSuccess: function (res) {
-      if (res.mode !== hcap.power.PowerMode.NORMAL) {
-        // 🔥 Force panel ON first
-        hcap.power.setPowerMode({
-          mode: hcap.power.PowerMode.NORMAL,
-          onSuccess: function () {
-            console.log("[STARTUP] Panel forced to NORMAL");
-
-            // 🔥 CRITICAL delay
-            setTimeout(setMode2, 1200);
-          }
-        });
-      } else {
-        // Already NORMAL → still wait
-        setTimeout(setMode2, 1200);
-      }
-    }
-  });
-
-  function setMode2() {
-    hcap.mode.setHcapMode({
-      mode: hcap.mode.HCAP_MODE_2,
-      onSuccess: function () {
-        console.log("[STARTUP] HCAP_MODE_2 enabled safely");
-        window.__APP_READY_FOR_POWER__ = true;
-      },
-      onFailure: function (f) {
-        console.warn("MODE_2 failed:", f && f.errorMessage);
-      }
-    });
-  }
 }
 
 
@@ -258,12 +218,7 @@ function startMacAcquisitionFlow() {
             try { registerKeyCodeNumbers(); } catch (e) { console.warn("registerKeyCodeNumbers error:", e); }
             try { registerKeyCodeExit(); } catch (e) { console.warn("registerKeyCodeExit error:", e); }
             try { initHCAPPowerDefaults(); } catch (e) { console.warn("initHCAPPowerDefaults error:", e); }
-
-            // 🔥 REQUIRED: avoid morning reboot issue
-            setTimeout(function () {
-              window.__APP_READY_FOR_POWER__ = true;
-              console.log("[POWER] App ready for Warm Mode");
-            }, 3000); // 2–3 sec is SAFE for LG TVs
+            try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
         }
     });
 }
@@ -275,20 +230,16 @@ function registerKeyCodeNumbers() {
         hcap.key.registerKey({
           keyCode: [409],  // must be an array (Power key)
           onSuccess: function () {
-            // utilities.genricPopup("Power key (409) registered successfully", 'info');
             console.log("Power key (409) registered successfully");
           },
           onFailure: function (f) {
-            // utilities.genricPopup("Power key registration failed: " + (f && f.errorMessage), 'info');
             console.error("Power key registration failed:", f && f.errorMessage);
           }
         });
       } else {
-        // utilities.genricPopup("hcap.key.registerKey API not available on this device", 'info');
         console.warn("hcap.key.registerKey API not available on this device");
       }
     } catch (e) {
-    //   utilities.genricPopup("Exception while registering Power key: " + e, 'info');
       console.error("Exception while registering Power key:", e);
     }
 }
@@ -382,6 +333,10 @@ function initHCAPPowerDefaults() {
 
 function appStart() {
 	console.log("Starting appStart sequence (MAC acquisition flow)");
+	// Reset HDMI state on app startup
+	if (typeof resetHdmiOnStartup === "function") {
+		resetHdmiOnStartup();
+	}
 	startMacAcquisitionFlow();
 }
 
@@ -551,5 +506,121 @@ app.reloadApp = function(event) {
 		window.close();
 	}
 }
+
+document.addEventListener('power_mode_changed', function(event) {
+  console.log("Power mode changed event:", event);
+  console.log("view outside------------------------------------------>", view);
+
+  var isInLiveTv = (view === "lgLgLiveTv" || view === "liveTvPlayer");
+  if(isInLiveTv) {
+
+    try {
+      hcap.power.getPowerMode({
+        onSuccess: function(s) {
+          var cur = s && s.mode;
+
+          console.log("s---------------->", s)
+
+          if (cur !== hcap.power.PowerMode.WARM) {
+            console.log("normal mode called-------------------------->")
+          } else {
+            try { 
+          if (typeof stopAndClearMedia === 'function') {
+            stopAndClearMedia(); 
+          }
+        } catch(e) {}
+
+        // Stop any intervals
+        try {
+          if (Main.lgLgchannelMetaRefreshInterval) {
+            clearInterval(Main.lgLgchannelMetaRefreshInterval);
+            Main.lgLgchannelMetaRefreshInterval = null;
+          }
+        } catch(e) {
+          console.warn('Error clearing interval:', e);
+        }
+
+        // Clear current channel and navigate back
+        try {
+          presentPagedetails.currentChannelId = undefined;
+          presentPagedetails.showingTvGuide = false;
+          Main.previousPage(); 
+        } catch(e) {
+          console.warn('Error navigating back:', e);
+        }
+
+        // Clean up overlays and UI elements
+        try {
+          macro('.lg-tv-overlay').css('display', 'none');
+          macro('.tv-guide-container').css('display', 'none');
+        } catch(e) {console.warn('Error hiding overlays:', e);}
+
+        // Reset background
+        try {
+          document.body.style.background = "#000";
+        } catch(e) {
+          console.warn('Error resetting background:', e);
+        }
+
+        try {
+          if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+          }
+        } catch (e) {}
+          }
+        },
+        onFailure: function(f) {
+          console.warn("hcap.power.getPowerMode failed:", f && f.errorMessage);
+          try { 
+          if (typeof stopAndClearMedia === 'function') {
+            stopAndClearMedia(); 
+          }
+        } catch(e) {}
+
+        // Stop any intervals
+        try {
+          if (Main.lgLgchannelMetaRefreshInterval) {
+            clearInterval(Main.lgLgchannelMetaRefreshInterval);
+            Main.lgLgchannelMetaRefreshInterval = null;
+          }
+        } catch(e) {
+          console.warn('Error clearing interval:', e);
+        }
+
+        // Clear current channel and navigate back
+        try {
+          presentPagedetails.currentChannelId = undefined;
+          presentPagedetails.showingTvGuide = false;
+          Main.previousPage(); 
+        } catch(e) {
+          console.warn('Error navigating back:', e);
+        }
+
+        // Clean up overlays and UI elements
+        try {
+          macro('.lg-tv-overlay').css('display', 'none');
+          macro('.tv-guide-container').css('display', 'none');
+        } catch(e) {console.warn('Error hiding overlays:', e);}
+
+        // Reset background
+        try {
+          document.body.style.background = "#000";
+        } catch(e) {
+          console.warn('Error resetting background:', e);
+        }
+
+        try {
+          if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+          }
+        } catch (e) {}
+        }
+      })
+    } catch (e) {
+      console.warn("getPowerMode error:", e);
+    }
+
+  }
+})
 
 app.appPreLoad();
