@@ -450,10 +450,10 @@ Main.cacheMultipleImages = function(items, callback) {
 };
 
 // Function to render home page
-Main.renderHomePage = function (applist, textOfLang) {
+Main.renderHomePage = function (applist) {
   view = "macroHome";
   presentPagedetails.view = view;
-  Main.selectedLanguage = textOfLang
+  // Main.selectedLanguage = textOfLang
   macro("#mainContent").html("");
   macro("#mainContent").html(Util.homePageHtml());
 
@@ -759,9 +759,12 @@ Main.jsontemplateApi = function() {
   
   // ✅ Show loading popup
   showLoadingPopup();
+
+  var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
+  var AppUrl = getCustomAppUrl(cached , 'custom')
   
   macro.ajax({
-    url: apiPrefixUrl + "json-template?template_uuid=9116ddc9-388a-4060-8de6-3135e856d7cb",
+    url: apiPrefixUrl + "json-template?template_uuid=" + (AppUrl ? AppUrl : ""),
     type: "GET",
     headers: {
       Authorization: "Bearer " + pageDetails.access_token,
@@ -959,6 +962,12 @@ Main.updateDeviceDetailsSendApi = function () {
       installed_app_version: { guest_tv: appConfig.appVersion || ""},
       security_patch_level: "",
     })
+
+    if (typeof deviceDetails.model_name === "string") {
+      deviceModelName = deviceDetails.model_name.trim().toLowerCase();
+    }else if (deviceDetails.model_name != null) {
+      deviceModelName = String(deviceDetails.model_name).trim().toLowerCase();
+    }
 
     if (typeof macro !== "undefined" && macro.ajax) {
       macro.ajax({
@@ -1410,6 +1419,16 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
 
           presentPagedetails.liveTvChannelMetaDetails = result.result;
           presentPagedetails.liveTvChannelIdDetails = channelIdDetails;
+
+          // hcap.mode.setHcapMode({
+          //   mode: hcap.mode.HCAP_MODE_2,
+          //   onSuccess: function () {
+          //     console.log("HCAP mode 2 set");
+          //   },
+          //   onFailure: function (f) {
+          //     console.log("Failed to set HCAP mode: " + f.errorMessage);
+          //   }
+          // })
 
           if( Main.liveTvChannelIdDetails && Main.liveTvChannelIdDetails[0] && Main.liveTvChannelIdDetails[0].lg_ch_url) {
             var chUrl = Main.liveTvChannelIdDetails[0].lg_ch_url;

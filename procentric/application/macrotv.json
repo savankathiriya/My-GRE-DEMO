@@ -49,10 +49,6 @@
             "VersionNo": 0.1
         },
         {
-            "FileName": "https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js",
-            "VersionNo": 0.1
-        },
-        {
             "FileName": "javascript/mqtt-client.js",
             "VersionNo": 0.1
         },

@@ -1,456 +1,357 @@
 /**
  * MQTT Client Module for ProCentric LG TV Application
- * With subscription and command handling
+ *
+ * IMPORTANT: window.MqttClient and window.GreMqttClient are registered
+ * SYNCHRONOUSLY when this file is parsed, so typeof MqttClient !== 'undefined'
+ * is always true. Calling .init() triggers the mqtt.min.js dynamic load
+ * internally and connects once the library is ready.
+ *
+ * Usage in main.js (no change needed):
+ *   MqttClient.init();   // reads everything from Main.deviceProfile
  */
 
-var MqttClient = {
-    client: null,
-    isConnected: false,
-    reconnectTimer: null,
-    reconnectAttempts: 0,
-    config: null,
-    deviceSrNo: null,
-    subscribedTopic: null
-};
+(function () {
 
-/**
- * Initialize MQTT connection
- */
-MqttClient.init = function(mqttSettings, deviceSerialNumber) {
-    if (!mqttSettings || !mqttSettings.broker) {
-        console.error('[MQTT] Invalid MQTT settings provided');
-        return;
+    var DEBUG = true;
+    function log()  { if (!DEBUG) return; try { console.log.apply(console,  arguments); } catch(e){} }
+    function warn() { if (!DEBUG) return; try { console.warn.apply(console,  arguments); } catch(e){} }
+    function err()  {               try { console.error.apply(console, arguments); } catch(e){} }
+
+    // ── Forced broker URL ──────────────────────────────────────────────────────
+    var FORCED_WS_URL = 'wss://rs232.cloudext.co:8084/mqtt';
+
+    var DEFAULT_BACKEND = {
+        url:             FORCED_WS_URL,
+        protocolVersion: 4,
+        username:        '',
+        password:        '',
+        keepAlive:       60,
+        connectTimeout:  30 * 1000
+    };
+
+    var TOPICS_TEMPLATES = {
+        tv_device_command:       'GRE/{DeviceSrNo}/CMD',
+        tv_property_command:     'GRE/{PropertyCode}/CMD',
+        portal_device_command:   'GRE/{DeviceSrNo}/CMD_RES',
+        portal_property_command: 'GRE/{PropertyCode}/CMD_RES'
+    };
+
+    // ── Internal state ─────────────────────────────────────────────────────────
+    var client            = null;
+    var connected         = false;
+    var reconnectAttempts = 0;
+    var currentBackend    = {};
+    var DeviceSrNo        = '';
+    var PropertyCode      = '';
+
+    var _mqttLibLoading   = false;
+    var _mqttLibReady     = false;
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function makeClientId() {
+        return 'WEB-LG-' + (DeviceSrNo || 'UNKNOWN') + '-' + Math.floor(Math.random() * 1000000);
     }
 
-    if (!deviceSerialNumber) {
-        console.error('[MQTT] Device serial number is required');
-        return;
+    function resolveTopic(template) {
+        if (!template || typeof template !== 'string') return null;
+        var s = template
+            .replace(/\{DeviceSrNo\}/g,   DeviceSrNo   || '')
+            .replace(/\{PropertyCode\}/g, PropertyCode || '');
+        if (s.indexOf('{') !== -1 || s.indexOf('}') !== -1) return null;
+        if (s.indexOf('//') !== -1) return null;
+        return s;
     }
 
-    this.config = mqttSettings;
-    this.deviceSrNo = deviceSerialNumber;
-
-    console.log('[MQTT] Initializing MQTT client...');
-    console.log('[MQTT] Broker:', this.config.broker.host);
-    console.log('[MQTT] Device Serial:', this.deviceSrNo);
-
-    this.connect();
-};
-
-/**
- * Establish MQTT connection
- */
-MqttClient.connect = function() {
-    try {
-        var broker = this.config.broker;
-        var auth = this.config.authentication;
-        
-        // Generate unique client ID
-        var clientId = 'GRE_TV_' + this.deviceSrNo + '_' + Date.now();
-
-        // WebSocket configuration
-        var wsHost = broker.host;
-        var wsPort = 8084; // Static secure WebSocket port
-        var wsPath = '/mqtt';
-        
-        console.log('[MQTT] Creating client...');
-        console.log('[MQTT] Host:', wsHost);
-        console.log('[MQTT] Port:', wsPort);
-        console.log('[MQTT] Path:', wsPath);
-        console.log('[MQTT] Client ID:', clientId);
-
-        // CORRECT Paho MQTT Client instantiation for WebSockets
-        // Syntax: new Paho.MQTT.Client(hostname, port, path, clientId)
-        this.client = new Paho.MQTT.Client(wsHost, wsPort, wsPath, clientId);
-
-        // Set up callback handlers BEFORE connecting
-        var self = this;
-        
-        this.client.onConnectionLost = function(responseObject) {
-            self.onConnectionLost(responseObject);
-
-        };
-        this.client.onMessageArrived = function(message) {
-            console.log("messages------------------------>", message);
-            self.onMessageArrived(message);
-        };
-
-        // Prepare connection options
-        var connectOptions = {
-            useSSL: true, // CRITICAL: Must be true for wss://
-            timeout: 30,
-            keepAliveInterval: broker.keep_alive || 60,
-            cleanSession: this.config.clean_session !== false,
-            mqttVersion: 4, // Use MQTT 3.1.1
-            onSuccess: function() {
-                self.onConnect();
-            },
-            onFailure: function(error) {
-                self.onConnectFailure(error);
-            }
-        };
-
-        // Add authentication if provided
-        if (auth && auth.username) {
-            connectOptions.userName = auth.username;
-            console.log('[MQTT] Username:', auth.username);
-        }
-        if (auth && auth.password) {
-            connectOptions.password = auth.password;
-            console.log('[MQTT] Password: [HIDDEN]');
-        }
-
-        // Add Last Will and Testament
-        if (this.config.last_will && this.config.last_will.topic) {
-            var lwt = this.config.last_will;
-            var lwtTopic = lwt.topic.replace('{DeviceSrNo}', this.deviceSrNo);
-            
-            // Prepare LWT message
-            var lwtMessage = lwt.message || {};
-            if (typeof lwtMessage === 'object') {
-                if (lwtMessage.responce && lwtMessage.responce.sr_no) {
-                    lwtMessage.responce.sr_no = this.deviceSrNo;
-                }
-                lwtMessage = JSON.stringify(lwtMessage);
-            }
-
-            var willMessage = new Paho.MQTT.Message(lwtMessage);
-            willMessage.destinationName = lwtTopic;
-            willMessage.qos = lwt.qos || 1;
-            willMessage.retained = lwt.retain === true;
-
-            connectOptions.willMessage = willMessage;
-
-            console.log('[MQTT] Last Will Topic:', lwtTopic);
-            console.log('[MQTT] Last Will QoS:', willMessage.qos);
-        }
-
-        console.log('[MQTT] Attempting to connect with useSSL:', connectOptions.useSSL);
-        this.client.connect(connectOptions);
-
-    } catch (error) {
-        console.error('[MQTT] Connection error:', error);
-        console.error('[MQTT] Error stack:', error.stack);
-        this.scheduleReconnect();
-    }
-};
-
-/**
- * Connection success callback
- */
-MqttClient.onConnect = function() {
-    console.log('[MQTT] ✅ Connected successfully!');
-    console.log('[MQTT] Client connected to broker');
-    this.isConnected = true;
-    this.reconnectAttempts = 0;
-    
-    // Clear any pending reconnect timers
-    if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = null;
-    }
-
-    console.log("called---------------------------------------->")
-
-    // Subscribe to command topic after successful connection
-    this.subscribeToCommandTopic();
-};
-
-/**
- * Subscribe to command topic
- */
-MqttClient.subscribeToCommandTopic = function() {
-    if (!this.client || !this.isConnected) {
-        console.error('[MQTT] Cannot subscribe - client not connected');
-        return;
-    }
-
-    // Build topic: GRE/{DeviceSrNo}/CMD
-    var topic = 'GRE/' + this.deviceSrNo + '/CMD';
-    this.subscribedTopic = topic;
-
-    console.log('[MQTT] 📥 Subscribing to topic:', topic);
-
-    var self = this;
-    
-    try {
-        this.client.subscribe(topic, {
-            qos: 1,
-            onSuccess: function() {
-                console.log('[MQTT] ✅ Successfully subscribed to:', topic);
-            },
-            onFailure: function(error) {
-                console.error('[MQTT] ❌ Subscription failed:', error.errorMessage);
-                console.error('[MQTT] Error code:', error.errorCode);
-                
-                // Retry subscription after delay
-                setTimeout(function() {
-                    self.subscribeToCommandTopic();
-                }, 5000);
-            }
+    function buildResolvedTopics(templates) {
+        var out = [];
+        templates = templates || TOPICS_TEMPLATES;
+        Object.keys(templates).forEach(function (k) {
+            var resolved = resolveTopic(templates[k]);
+            if (resolved) out.push({ key: k, topic: resolved });
+            else warn('[MQTT] Topic unresolved, skipping:', k, templates[k]);
         });
-    } catch (error) {
-        console.error('[MQTT] Subscribe exception:', error);
+        return out;
     }
-};
 
-/**
- * Handle incoming MQTT messages
- */
-MqttClient.onMessageArrived = function(message) {
-    console.log('[MQTT] 📨 Message arrived on topic:', message);
-    console.log('[MQTT] Message payload:', message.payloadString);
-    
-    try {
-        // Parse the incoming message
-        var payload = JSON.parse(message.payloadString);
-        
-        console.log('[MQTT] Parsed command:', payload);
-        
-        // Validate payload structure
-        if (!payload.cmd || typeof payload.seq === 'undefined') {
-            console.warn('[MQTT] Invalid command format - missing cmd or seq');
+    // ── Subscribe helpers ──────────────────────────────────────────────────────
+    function safeSubscribe(topic, qos, cb) {
+        try {
+            var q = parseInt(qos, 10);
+            if (isNaN(q) || q < 0 || q > 2) q = 0;
+
+            client.subscribe(topic, { qos: q }, function (subErr, granted) {
+                if (subErr) {
+                    err('[MQTT] Subscribe error for', topic, subErr);
+                    if (typeof cb === 'function') cb(subErr, null);
+                    return;
+                }
+                var rejected = false;
+                try {
+                    if (Array.isArray(granted) && granted.length > 0) {
+                        var g0 = granted[0];
+                        if (typeof g0 === 'number') { if (g0 === 128) rejected = true; }
+                        else if (g0 && (g0.qos === 128 || g0.reasonCode >= 128)) rejected = true;
+                    }
+                } catch (e) {}
+
+                if (rejected) {
+                    warn('[MQTT] Broker rejected', topic, '— fallback qos 0');
+                    client.subscribe(topic, { qos: 0 }, function (err2, g2) {
+                        if (err2) { err('[MQTT] Fallback subscribe failed', topic, err2); if (typeof cb === 'function') cb(err2, null); }
+                        else       { log('[MQTT] Subscribed (qos0 fallback)', topic);       if (typeof cb === 'function') cb(null, g2); }
+                    });
+                } else {
+                    log('[MQTT] Subscribed to', topic, granted);
+                    if (typeof cb === 'function') cb(null, granted);
+                }
+            });
+        } catch (e) {
+            err('[MQTT] safeSubscribe exception', topic, e);
+            if (typeof cb === 'function') cb(e);
+        }
+    }
+
+    function subscribeAllResolved(templates) {
+        if (!client || !connected) { warn('[MQTT] subscribeAllResolved: not connected'); return; }
+        var topics = buildResolvedTopics(templates);
+        if (!topics.length) { warn('[MQTT] No topics to subscribe — DeviceSrNo/PropertyCode may be empty'); return; }
+        topics.forEach(function (t) {
+            safeSubscribe(t.topic, 1, function (subErr, granted) {
+                log('[MQTT] subscribe result for', t.topic, 'err=', subErr, 'granted=', granted);
+            });
+        });
+    }
+
+    // ── Connection ─────────────────────────────────────────────────────────────
+    function connect() {
+        if (!currentBackend || !currentBackend.url) { err('[MQTT] connect: backend.url missing'); return; }
+        if (client) { try { client.end(true); } catch (e) {} }
+
+        reconnectAttempts++;
+        var clientId = makeClientId();
+        var opts = {
+            clientId:        clientId,
+            protocol:        'wss',
+            protocolVersion: currentBackend.protocolVersion || 4,
+            keepalive:       currentBackend.keepAlive       || 60,
+            reconnectPeriod: 0,
+            connectTimeout:  currentBackend.connectTimeout  || 30000,
+            clean:           true
+        };
+        if (currentBackend.username) opts.username = currentBackend.username;
+        if (currentBackend.password) opts.password = currentBackend.password;
+
+        log('[MQTT] Connecting ->', currentBackend.url, '| clientId:', clientId);
+        client = mqtt.connect(currentBackend.url, opts);
+
+        client.on('connect', function (connack) {
+            reconnectAttempts = 0;
+            connected = true;
+            window.__MQTT_CONNECTED_AT__ = Date.now();
+            log('[MQTT] Connected', connack);
+
+            var templates = TOPICS_TEMPLATES;
+            try {
+                if (window.Main && Main.deviceProfile) {
+                    var pd     = Main.deviceProfile.property_detail && Main.deviceProfile.property_detail.mqtt_setting ? Main.deviceProfile.property_detail.mqtt_setting : null;
+                    var pm     = Main.deviceProfile.mqtt_setting || null;
+                    var chosen = pd || pm;
+                    if (chosen && chosen.subscribe) templates = chosen.subscribe;
+                }
+            } catch (e) {}
+            subscribeAllResolved(templates);
+        });
+
+        client.on('error', function (e) {
+            warn('[MQTT] Client error:', e && (e.message || e));
+        });
+
+        client.on('close', function () {
+            connected = false;
+            warn('[MQTT] Connection closed — scheduling reconnect');
+            scheduleReconnect();
+        });
+
+        client.on('message', function (topic, payload, packet) {
+            try {
+                var p = payload && payload.toString ? payload.toString() : String(payload);
+                log('[MQTT] Message | topic:', topic, '| payload:', p);
+
+                var parsed = null;
+                try { parsed = JSON.parse(p); } catch (e) {}
+
+                var cmd = (parsed && (parsed.cmd || parsed.command)) || '';
+
+                // Guard: retained
+                if (packet && packet.retain === true) { log('[MQTT] Ignored retained on', topic); return; }
+                // Guard: response topics
+                if (topic.indexOf('CMD_RES') !== -1) { log('[MQTT] Ignored CMD_RES topic', topic); return; }
+                // Guard: stale timestamp
+                if (parsed && parsed.ts && window.__MQTT_CONNECTED_AT__) {
+                    if (parsed.ts < window.__MQTT_CONNECTED_AT__) { log('[MQTT] Ignored stale ts', parsed.ts); return; }
+                }
+                // Guard: duplicate seq
+                if (parsed && parsed.seq != null) {
+                    if (window.__LAST_MQTT_SEQ__ === parsed.seq) { log('[MQTT] Ignored duplicate seq', parsed.seq); return; }
+                    window.__LAST_MQTT_SEQ__ = parsed.seq;
+                }
+
+                // ── Hand off to app ──────────────────────────────────────────────
+                if (typeof handleMqttCommand === 'function') {
+                    try { handleMqttCommand(cmd, parsed, topic); } catch (e) { err('[MQTT] handleMqttCommand threw:', e); }
+                } else {
+                    warn('[MQTT] handleMqttCommand not defined — add it to index.js');
+                }
+
+            } catch (e) { err('[MQTT] message handler error:', e); }
+        });
+    }
+
+    function scheduleReconnect() {
+        var wait = Math.pow(2, Math.min(reconnectAttempts || 1, 6)) * 1000;
+        log('[MQTT] Reconnect in', wait, 'ms (attempt', reconnectAttempts, ')');
+        setTimeout(function () { try { connect(); } catch (e) { scheduleReconnect(); } }, wait);
+    }
+
+    function stop() {
+        try { if (client) client.end(true); } catch (e) {}
+        client    = null;
+        connected = false;
+        log('[MQTT] Stopped');
+    }
+
+    // ── Dynamically load mqtt.min.js, then call connect() ─────────────────────
+    function loadMqttLibAndConnect() {
+        // Already available (e.g. loaded via <script> tag in index.html)
+        if (typeof mqtt !== 'undefined') {
+            _mqttLibReady = true;
+            log('[MQTT] mqtt library already present — connecting immediately');
+            connect();
             return;
         }
 
-        // Process the command and send response to backend
-        this.processCommand(payload);
-        
-    } catch (error) {
-        console.error('[MQTT] Error processing message:', error);
-        console.error('[MQTT] Raw payload:', message.payloadString);
-    }
-};
-
-/**
- * Process MQTT command and send response to backend API
- */
-MqttClient.processCommand = function(command) {
-    console.log('[MQTT] Processing command:', command.cmd);
-    
-    var self = this;
-    
-    // 🔥 IMMEDIATELY send acknowledgment to backend API that command was received
-    console.log('[MQTT] ✅ Command received, sending to backend API immediately');
-    
-    // Prepare response data - EXACT format as required (no extra fields)
-    var responseData = {
-        cmd: command.cmd,
-        responce: {
-            cmd_status: true,
-            sr_no: this.deviceSrNo,
-            message: ""
-        },
-        seq: String(command.seq)
-    };
-    
-    // Send to backend API immediately
-    this.sendCommandToBackend(responseData, command);
-};
-
-/**
- * Send command data to backend API immediately upon receipt
- */
-MqttClient.sendCommandToBackend = function(responseData, originalCommand) {
-    console.log('[MQTT] 📤 Sending command to backend API');
-    console.log('[MQTT] Response payload:', JSON.stringify(responseData));
-    
-    // Check if required globals are available
-    if (typeof macro === 'undefined' || typeof apiPrefixUrl === 'undefined' || typeof pageDetails === 'undefined') {
-        console.error('[MQTT] Required globals not available - cannot send API request');
-        console.error('[MQTT] macro defined:', typeof macro !== 'undefined');
-        console.error('[MQTT] apiPrefixUrl defined:', typeof apiPrefixUrl !== 'undefined');
-        console.error('[MQTT] pageDetails defined:', typeof pageDetails !== 'undefined');
-        return;
-    }
-    
-    var self = this;
-    
-    // Send to backend
-    macro.ajax({
-        url: apiPrefixUrl + "device-mqtt-cmd",
-        type: "POST",
-        data: JSON.stringify(responseData),
-        contentType: "application/json; charset=utf-8",
-        headers: {
-            "Authorization": "Bearer " + (pageDetails && pageDetails.access_token ? pageDetails.access_token : "")
-        },
-        success: function(data) {
-            console.log('[MQTT] ✅ Command sent to backend successfully');
-            console.log('[MQTT] Backend response:', data);
-            
-            // Now execute the actual command after successful backend notification
-            self.executeCommand(originalCommand);
-        },
-        error: function(err) {
-            console.error('[MQTT] ❌ Backend API error:', err);
-            console.error('[MQTT] Error status:', err.status);
-            console.error('[MQTT] Error text:', err.statusText);
-            
-            // Still try to execute command even if backend fails
-            console.warn('[MQTT] Executing command despite backend API failure');
-            self.executeCommand(originalCommand);
-        },
-        timeout: 60000
-    });
-};
-
-/**
- * Execute the actual command functionality (optional - after backend notification)
- */
-MqttClient.executeCommand = function(command) {
-    console.log('[MQTT] 🔧 Executing command locally:', command.cmd);
-    
-    try {
-        switch (command.cmd) {
-            case 'set_volume':
-                if (command.payload && typeof command.payload.volume !== 'undefined') {
-                    console.log('[MQTT] Setting volume to:', command.payload.volume);
-                    // TODO: Implement actual volume setting logic here
-                    // Example:
-                    // if (window.hcap && hcap.audio && hcap.audio.setVolume) {
-                    //     hcap.audio.setVolume({
-                    //         volume: command.payload.volume,
-                    //         onSuccess: function() {
-                    //             console.log('[MQTT] Volume set successfully');
-                    //         },
-                    //         onFailure: function(err) {
-                    //             console.error('[MQTT] Volume set failed:', err);
-                    //         }
-                    //     });
-                    // }
-                } else {
-                    console.warn('[MQTT] Invalid volume payload');
-                }
-                break;
-                
-            case 'ping':
-                console.log('[MQTT] Ping command - no action needed');
-                break;
-                
-            case 'get_status':
-                console.log('[MQTT] Get status command - no action needed');
-                break;
-                
-            default:
-                console.warn('[MQTT] Unknown command, no execution handler:', command.cmd);
+        // Script tag already injected — connect() will be called from onload
+        if (_mqttLibLoading) {
+            log('[MQTT] mqtt.min.js already loading — connect will fire on load');
+            return;
         }
-    } catch (error) {
-        console.error('[MQTT] Command execution error:', error);
-    }
-};
 
-/**
- * Connection failure callback
- */
-MqttClient.onConnectFailure = function(error) {
-    console.error('[MQTT] ❌ Connection failed');
-    console.error('[MQTT] Error code:', error.errorCode);
-    console.error('[MQTT] Error message:', error.errorMessage);
-    
-    this.isConnected = false;
-    this.scheduleReconnect();
-};
+        _mqttLibLoading = true;
+        log('[MQTT] Injecting mqtt.min.js script tag...');
 
-/**
- * Connection lost callback
- */
-MqttClient.onConnectionLost = function(responseObject) {
-    this.isConnected = false;
-    this.subscribedTopic = null;
-    
-    console.warn('[MQTT] ⚠️ Connection lost');
-    console.warn('[MQTT] Error code:', responseObject.errorCode);
-    console.warn('[MQTT] Error message:', responseObject.errorMessage);
-    
-    if (responseObject.errorCode !== 0) {
-        this.scheduleReconnect();
-    } else {
-        console.log('[MQTT] Disconnected normally');
-    }
-};
+        var script  = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src  = 'javascript/mqtt.min.js';
 
-/**
- * Schedule reconnection attempt
- */
-MqttClient.scheduleReconnect = function() {
-    var reconnectConfig = this.config.reconnect;
-    
-    if (!reconnectConfig || !reconnectConfig.is_auto_reconnect) {
-        console.log('[MQTT] Auto-reconnect disabled');
-        return;
-    }
-
-    var maxAttempts = reconnectConfig.max_attempts || 5;
-    
-    if (this.reconnectAttempts >= maxAttempts) {
-        console.error('[MQTT] Max reconnection attempts (' + maxAttempts + ') reached');
-        return;
-    }
-
-    this.reconnectAttempts++;
-    var interval = (reconnectConfig.interval || 5) * 1000;
-
-    console.log('[MQTT] 🔄 Scheduling reconnect attempt ' + this.reconnectAttempts + ' in ' + (interval / 1000) + ' seconds');
-
-    if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-    }
-
-    var self = this;
-    this.reconnectTimer = setTimeout(function() {
-        console.log('[MQTT] Executing reconnect attempt ' + self.reconnectAttempts);
-        self.connect();
-    }, interval);
-};
-
-/**
- * Disconnect from MQTT broker
- */
-MqttClient.disconnect = function() {
-    console.log('[MQTT] Disconnecting...');
-    
-    if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = null;
-    }
-
-    if (this.client && this.isConnected) {
-        try {
-            // Unsubscribe before disconnecting
-            if (this.subscribedTopic) {
-                this.client.unsubscribe(this.subscribedTopic);
-                console.log('[MQTT] Unsubscribed from:', this.subscribedTopic);
+        script.onload = function () {
+            _mqttLibReady   = true;
+            _mqttLibLoading = false;
+            if (typeof mqtt === 'undefined') {
+                err('[MQTT] mqtt.min.js loaded but window.mqtt is undefined — check the file');
+                return;
             }
-            
-            this.client.disconnect();
-            console.log('[MQTT] Disconnected successfully');
-        } catch (error) {
-            console.error('[MQTT] Disconnect error:', error);
+            log('[MQTT] mqtt.min.js loaded — connecting now');
+            connect();
+        };
+
+        script.onerror = function (e) {
+            _mqttLibLoading = false;
+            err('[MQTT] Failed to load mqtt.min.js:', e);
+        };
+
+        (document.head || document.getElementsByTagName('head')[0]).appendChild(script);
+    }
+
+    // ── Public init ────────────────────────────────────────────────────────────
+    function init(opts) {
+        // opts is optional — everything is auto-read from Main.deviceProfile
+        try {
+            currentBackend = {
+                url:             FORCED_WS_URL,
+                protocolVersion: DEFAULT_BACKEND.protocolVersion,
+                username:        DEFAULT_BACKEND.username,
+                password:        DEFAULT_BACKEND.password,
+                keepAlive:       DEFAULT_BACKEND.keepAlive,
+                connectTimeout:  DEFAULT_BACKEND.connectTimeout
+            };
+
+            // Merge explicit backend opts (url is always forced)
+            if (opts && opts.backend) {
+                if (typeof opts.backend.username        !== 'undefined') currentBackend.username        = opts.backend.username;
+                if (typeof opts.backend.password        !== 'undefined') currentBackend.password        = opts.backend.password;
+                if (typeof opts.backend.protocolVersion !== 'undefined') currentBackend.protocolVersion = opts.backend.protocolVersion;
+                if (typeof opts.backend.keepAlive       !== 'undefined') currentBackend.keepAlive       = opts.backend.keepAlive;
+                if (typeof opts.backend.connectTimeout  !== 'undefined') currentBackend.connectTimeout  = opts.backend.connectTimeout;
+            }
+            currentBackend.url = FORCED_WS_URL;
+
+            // Pull identifiers + credentials from Main.deviceProfile
+            if (window.Main && Main.deviceProfile) {
+                var dp = Main.deviceProfile;
+
+                if (dp.sr_no)            DeviceSrNo = String(dp.sr_no);
+                else if (dp.device_uuid) DeviceSrNo = String(dp.device_uuid);
+
+                if (dp.property_detail && dp.property_detail.property_code != null)
+                    PropertyCode = String(dp.property_detail.property_code);
+                else if (dp.property_code != null)
+                    PropertyCode = String(dp.property_code);
+
+                try {
+                    var profileMqtt = (dp.property_detail && dp.property_detail.mqtt_setting) || dp.mqtt_setting;
+                    if (profileMqtt) {
+                        if (profileMqtt.username) currentBackend.username = profileMqtt.username;
+                        if (profileMqtt.password) currentBackend.password = profileMqtt.password;
+                        if (profileMqtt.authentication) {
+                            if (profileMqtt.authentication.username) currentBackend.username = profileMqtt.authentication.username;
+                            if (profileMqtt.authentication.password) currentBackend.password = profileMqtt.authentication.password;
+                        }
+                        if (profileMqtt.protocolVersion)  currentBackend.protocolVersion = profileMqtt.protocolVersion;
+                        if (profileMqtt.keepAlive)        currentBackend.keepAlive        = profileMqtt.keepAlive;
+                        if (profileMqtt.connectTimeoutMs) currentBackend.connectTimeout   = profileMqtt.connectTimeoutMs;
+                    }
+                } catch (e) { log('[MQTT] Profile mqtt merge error:', e); }
+            }
+
+            // opts can override individual fields
+            if (opts && opts.deviceSrNo)   DeviceSrNo   = String(opts.deviceSrNo);
+            if (opts && opts.propertyCode) PropertyCode = String(opts.propertyCode);
+            if (opts && opts.templates) {
+                Object.keys(opts.templates).forEach(function (k) { TOPICS_TEMPLATES[k] = opts.templates[k]; });
+            }
+
+            log('[MQTT] init | DeviceSrNo:', DeviceSrNo, '| PropertyCode:', PropertyCode, '| user:', currentBackend.username ? '(set)' : '(none)');
+
+            // Load mqtt.min.js (if not already present) then connect
+            loadMqttLibAndConnect();
+
+        } catch (e) {
+            err('[MQTT] GreMqttClient.init error:', e);
         }
     }
 
-    this.isConnected = false;
-    this.reconnectAttempts = 0;
-    this.subscribedTopic = null;
-};
-
-/**
- * Get connection status
- */
-MqttClient.getStatus = function() {
-    return {
-        isConnected: this.isConnected,
-        reconnectAttempts: this.reconnectAttempts,
-        deviceSrNo: this.deviceSrNo,
-        broker: this.config ? this.config.broker.host : null,
-        subscribedTopic: this.subscribedTopic
+    // ─────────────────────────────────────────────────────────────────────────
+    // Register globals SYNCHRONOUSLY — this is the key fix.
+    // These objects exist the instant the browser parses this file,
+    // so main.js will never see typeof MqttClient === 'undefined'.
+    // ─────────────────────────────────────────────────────────────────────────
+    window.GreMqttClient = {
+        init:                 init,
+        stop:                 stop,
+        subscribeAllResolved: subscribeAllResolved,
+        buildResolvedTopics:  function () { return buildResolvedTopics(); },
+        resolveTopic:         resolveTopic,
+        getClient:            function () { return client; },
+        isConnected:          function () { return !!connected; }
     };
-};
 
-/**
- * Check if client is ready
- */
-MqttClient.isReady = function() {
-    return this.client !== null && this.isConnected;
-};
+    // Backward-compatible alias — existing main.js call works with zero changes
+    window.MqttClient = {
+        init:    function (opts) { window.GreMqttClient.init(opts); },
+        stop:    function ()     { window.GreMqttClient.stop();     },
+        isReady: function ()     { return window.GreMqttClient.isConnected(); }
+    };
+
+    log('[MQTT] GreMqttClient + MqttClient registered synchronously');
+
+})();

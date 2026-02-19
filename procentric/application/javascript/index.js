@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.220"
+	appVersion:"v1.250"
 };
 var loadFilePaths = 'macrotv.json';
 var scount = 0, mainCount = 0;
@@ -23,6 +23,8 @@ var tvKeyCode = {
 };
 var deviceMac = null;
 // var deviceMac = '1cf43ff843b4';
+var deviceModelName = "";
+var lastNetworkType = "";
 var deviceIp  = null;
 var warmSleepTimerId = null;
 var warmSleepStartTs = null;
@@ -214,11 +216,57 @@ function startMacAcquisitionFlow() {
                 Main.deviceRegistrationAPi();
             } catch (e) { console.error("deviceRegistrationAPi error:", e); }
 
-            try { exitLiveTv(); } catch (e) { console.warn("exitLiveTv error:", e); }
             try { registerKeyCodeNumbers(); } catch (e) { console.warn("registerKeyCodeNumbers error:", e); }
             try { registerKeyCodeExit(); } catch (e) { console.warn("registerKeyCodeExit error:", e); }
             try { initHCAPPowerDefaults(); } catch (e) { console.warn("initHCAPPowerDefaults error:", e); }
+            try {
+              if(typeof stopAndClearMedia === 'function') {
+                stopAndClearMedia();
+              }
+            } catch(e) {}
+
+            // Stop any intervals
+            try {
+              if (Main.lgLgchannelMetaRefreshInterval) {
+                clearInterval(Main.lgLgchannelMetaRefreshInterval);
+                Main.lgLgchannelMetaRefreshInterval = null;
+              }
+            }catch(e) {
+              console.warn('Error clearing interval:', e);
+            }
+
+            try { resetHdmiToLIveTv(); } catch (e) { console.warn("resetHdmiToLIveTv error:", e); }
             try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
+            try { exitLiveTv(); } catch (eExit) { console.warn('exitLiveTv threw', eExit); }
+
+            // Clear current channel and navigate back
+            try {
+              presentPagedetails.currentChannelId = undefined;
+              presentPagedetails.showingTvGuide = false;
+            } catch(e) {
+              console.warn('Error navigating back:', e);
+            }
+
+            // Clean up overlays and UI elements
+            try {
+              macro('.lg-tv-overlay').css('display', 'none');
+              macro('.tv-guide-container').css('display', 'none');
+              macro('.live-tv-overlay').css('display', 'none');
+              macro('.live-tv-guide-container').css('display', 'none');
+            } catch(e) {console.warn('Error hiding overlays:', e);}
+
+            // Reset background
+            try {
+              document.body.style.background = "#000";
+            } catch(e) {
+              console.warn('Error resetting background:', e);
+            }
+
+            try {
+              if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+                hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+              }
+            } catch (e) {}
         }
     });
 }
@@ -507,6 +555,35 @@ app.reloadApp = function(event) {
 	}
 }
 
+function resetHdmiToLIveTv() {
+	try {
+		if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+			hcap.mode.setHcapMode({
+				mode: hcap.mode.HCAP_MODE_1,
+				onSuccess: function () {
+					console.log('HCAP_MODE_1 restored');
+	
+					// 🔹 IMPORTANT: Switch back to Live TV (Tuner)
+					if (window.hcap && hcap.externalinput) {
+						hcap.externalinput.setCurrentExternalInput({
+							type: hcap.externalinput.ExternalInputType.TV,
+							index: 0,
+							onSuccess: function () {
+								console.log("Returned to Live TV (Tuner)");
+							},
+							onFailure: function (f) {
+								console.warn("Failed to return to Live TV:", f && f.errorMessage);
+							}
+						});
+					}
+				}
+			});
+		}
+	} catch (e) {
+		console.warn('setHcapMode / return-to-TV failed', e);
+	}
+}
+
 document.addEventListener('power_mode_changed', function(event) {
   console.log("Power mode changed event:", event);
   console.log("view outside------------------------------------------>", view);
@@ -523,104 +600,235 @@ document.addEventListener('power_mode_changed', function(event) {
 
           if (cur !== hcap.power.PowerMode.WARM) {
             console.log("normal mode called-------------------------->")
-          } else {
-            try { 
-          if (typeof stopAndClearMedia === 'function') {
-            stopAndClearMedia(); 
-          }
-        } catch(e) {}
+          }else {
+            try {
+              if(typeof stopAndClearMedia === 'function') {
+                stopAndClearMedia();
+              }
+            } catch(e) {}
 
-        // Stop any intervals
-        try {
-          if (Main.lgLgchannelMetaRefreshInterval) {
-            clearInterval(Main.lgLgchannelMetaRefreshInterval);
-            Main.lgLgchannelMetaRefreshInterval = null;
-          }
-        } catch(e) {
-          console.warn('Error clearing interval:', e);
-        }
+            // Stop any intervals
+            try {
+              if (Main.lgLgchannelMetaRefreshInterval) {
+                clearInterval(Main.lgLgchannelMetaRefreshInterval);
+                Main.lgLgchannelMetaRefreshInterval = null;
+              }
+            }catch(e) {
+              console.warn('Error clearing interval:', e);
+            }
 
-        // Clear current channel and navigate back
-        try {
-          presentPagedetails.currentChannelId = undefined;
-          presentPagedetails.showingTvGuide = false;
-          Main.previousPage(); 
-        } catch(e) {
-          console.warn('Error navigating back:', e);
-        }
+            try { resetHdmiToLIveTv(); } catch (e) { console.warn("resetHdmiToLIveTv error:", e); }
+            try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
+            try { exitLiveTv(); } catch (eExit) { console.warn('exitLiveTv threw', eExit); }
 
-        // Clean up overlays and UI elements
-        try {
-          macro('.lg-tv-overlay').css('display', 'none');
-          macro('.tv-guide-container').css('display', 'none');
-        } catch(e) {console.warn('Error hiding overlays:', e);}
+            // Clear current channel and navigate back
+            try {
+              presentPagedetails.currentChannelId = undefined;
+              presentPagedetails.showingTvGuide = false;
+              Main.previousPage(); 
+            } catch(e) {
+              console.warn('Error navigating back:', e);
+            }
 
-        // Reset background
-        try {
-          document.body.style.background = "#000";
-        } catch(e) {
-          console.warn('Error resetting background:', e);
-        }
+            // Clean up overlays and UI elements
+            try {
+              macro('.lg-tv-overlay').css('display', 'none');
+              macro('.tv-guide-container').css('display', 'none');
+              macro('.live-tv-overlay').css('display', 'none');
+              macro('.live-tv-guide-container').css('display', 'none');
+            } catch(e) {console.warn('Error hiding overlays:', e);}
 
-        try {
-          if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
-            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
-          }
-        } catch (e) {}
+            // Reset background
+            try {
+              document.body.style.background = "#000";
+            } catch(e) {
+              console.warn('Error resetting background:', e);
+            }
+
+            try {
+              if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+                hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+              }
+            } catch (e) {}
           }
         },
         onFailure: function(f) {
           console.warn("hcap.power.getPowerMode failed:", f && f.errorMessage);
-          try { 
-          if (typeof stopAndClearMedia === 'function') {
-            stopAndClearMedia(); 
+          try {
+            if (typeof stopAndClearMedia === 'function') {
+              stopAndClearMedia(); 
+            }
+          } catch(e) {}
+
+          // Stop any intervals
+          try {
+            if (Main.lgLgchannelMetaRefreshInterval) {
+              clearInterval(Main.lgLgchannelMetaRefreshInterval);
+              Main.lgLgchannelMetaRefreshInterval = null;
+            }
+          } catch(e) {
+            console.warn('Error clearing interval:', e);
           }
-        } catch(e) {}
 
-        // Stop any intervals
-        try {
-          if (Main.lgLgchannelMetaRefreshInterval) {
-            clearInterval(Main.lgLgchannelMetaRefreshInterval);
-            Main.lgLgchannelMetaRefreshInterval = null;
+          try { resetHdmiToLIveTv(); } catch (e) { console.warn("resetHdmiToLIveTv error:", e); }
+          try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
+          try { exitLiveTv(); } catch (eExit) { console.warn('exitLiveTv threw', eExit); }
+
+          // Clear current channel and navigate back
+          try {
+            presentPagedetails.currentChannelId = undefined;
+            presentPagedetails.showingTvGuide = false;
+            Main.previousPage(); 
+          } catch(e) {
+            console.warn('Error navigating back:', e);
           }
-        } catch(e) {
-          console.warn('Error clearing interval:', e);
-        }
 
-        // Clear current channel and navigate back
-        try {
-          presentPagedetails.currentChannelId = undefined;
-          presentPagedetails.showingTvGuide = false;
-          Main.previousPage(); 
-        } catch(e) {
-          console.warn('Error navigating back:', e);
-        }
+          // Clean up overlays and UI elements
+          try {
+            macro('.lg-tv-overlay').css('display', 'none');
+            macro('.tv-guide-container').css('display', 'none');
+          } catch(e) {console.warn('Error hiding overlays:', e);}
 
-        // Clean up overlays and UI elements
-        try {
-          macro('.lg-tv-overlay').css('display', 'none');
-          macro('.tv-guide-container').css('display', 'none');
-        } catch(e) {console.warn('Error hiding overlays:', e);}
-
-        // Reset background
-        try {
-          document.body.style.background = "#000";
-        } catch(e) {
-          console.warn('Error resetting background:', e);
-        }
-
-        try {
-          if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
-            hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+          // Reset background
+          try {
+            document.body.style.background = "#000";
+          } catch(e) {
+            console.warn('Error resetting background:', e);
           }
-        } catch (e) {}
+
+          try {
+            if (window.hcap && hcap.mode && typeof hcap.mode.setHcapMode === 'function') {
+              hcap.mode.setHcapMode({ mode: hcap.mode.HCAP_MODE_1 });
+            }
+          } catch (e) {}
         }
       })
     } catch (e) {
       console.warn("getPowerMode error:", e);
     }
-
   }
 })
+
+document.addEventListener('output_connection_changed', function(event) {
+  console.log("output_connection_changed ----->", event);
+
+  if (typeof hcap === 'undefined' || !hcap.system || !hcap.system.getHdmiOutStatus) return;
+
+  hcap.system.getHdmiOutStatus({
+    onSuccess: function(status) {
+      console.log("HDMI OUT status:", status);
+
+      var hdmiCableStatus = (status && status.connected) ? "connected" : "disconnected";
+
+      if (hdmiCableStatus === "disconnected") {
+
+        // ✅ STEP 1: Force HCAP_MODE_1 — this tells the TV to render HTML 
+        //            to its INTERNAL panel (not through HDMI OUT)
+        // hcap.mode.setHcapMode({
+        //   mode: hcap.mode.HCAP_MODE_2,
+        //   onSuccess: function() {
+        //     console.log("Mode set to HCAP_MODE_1");
+
+        //     // ✅ STEP 2: Small delay to let the TV panel re-activate
+        //     setTimeout(function() {
+
+        //       // ✅ STEP 3: Restore body background (was "none" during video/hdmi mode)
+        //       document.body.style.background = "#000";
+        //       document.body.style.backgroundColor = "#000";
+
+        //       // ✅ STEP 4: Force #mainContent to be visible with inline style
+        //       var el = document.getElementById("mainContent");
+        //       if (el) {
+        //         el.style.display = "block";
+        //         el.style.visibility = "visible";
+        //         el.style.opacity = "1";
+        //         el.style.zIndex = "9999";
+        //       }
+
+              // ✅ STEP 5: Inject the page
+              macro("#mainContent").html('');
+              macro("#mainContent").html(Util.customHdmiDisconnectedPage());
+              macro("#mainContent").show();
+
+        //       console.log("customHdmiDisconnectedPage rendered");
+
+        //     }, 300); // 300ms for panel to wake up
+        //   },
+        //   onFailure: function(f) {
+        //     console.warn("setHcapMode failed:", f);
+
+        //     // Still try to show the page even if mode change failed
+        //     document.body.style.background = "#000";
+        //     macro("#mainContent").html('');
+        //     macro("#mainContent").html(Util.customHdmiDisconnectedPage());
+        //     macro("#mainContent").show();
+        //   }
+        // });
+
+      } else if (hdmiCableStatus === "connected" && macro("#mainContent").find(".customHdmiDisconnectedPage").length > 0) {
+        gotoHomeSCreenFromDisconnectPage();
+      }
+
+      // API update
+      updateCurrentNetworkType(function() {
+        var payload = {
+          device_status_info: {
+            hdmi_cable_status: hdmiCableStatus || ""
+          }
+        };
+        if (typeof macro !== "undefined" && macro.ajax) {
+          macro.ajax({
+            url: apiPrefixUrl + "device-profile",
+            type: "PATCH",
+            data: JSON.stringify(payload),
+            contentType: "application/json; charset=utf-8",
+            headers: {
+              Authorization: "Bearer " + (pageDetails && pageDetails.access_token ? pageDetails.access_token : "")
+            }
+          });
+        }
+      });
+    },
+    onFailure: function(f) {
+      console.log("Failed to get HDMI output status:", f && f.errorMessage);
+    }
+  });
+});
+
+document.addEventListener('idcap::mpi_cable_status_changed', function(param) {
+  var mpiStatus = (param && param.connected) ? "connected" : "disconnected";
+  console.log("MPI status changed:", mpiStatus);
+
+  if (mpiStatus === "disconnected") {
+    macro("#mainContent").html('');
+    macro("#mainContent").html(Util.customHdmiDisconnectedPage());
+    macro("#mainContent").show();
+  } else if(mpiStatus === "connected" && macro("#mainContent").find(".customHdmiDisconnectedPage").length > 0) {
+    gotoHomeSCreenFromDisconnectPage();
+  }
+
+  updateCurrentNetworkType(function () {
+    var payload = {
+      device_status_info: {
+        mpi_cable_status: mpiStatus ? mpiStatus : "",
+      }
+    }
+    if (typeof macro !== "undefined" && macro.ajax) {
+      macro.ajax({
+        url: apiPrefixUrl + "device-profile",
+        type: "PATCH",
+        data: JSON.stringify(payload),
+        contentType: "application/json; charset=utf-8",
+        headers: {
+          Authorization: "Bearer " + (pageDetails && pageDetails.access_token ? pageDetails.access_token : "")
+        }
+      });
+    }
+  });
+});
+
+function handleMqttCommand(cmd, data, topic) {
+  console.log('[MQTT CMD] cmd:', cmd, '| topic:', topic, '| data:', JSON.stringify(data));
+}
 
 app.appPreLoad();

@@ -31,6 +31,17 @@ function resetHdmiOnStartup() {
         presentPagedetails.currentLiveChannelId = undefined;
         presentPagedetails.showingLiveTvGuide = false;
     }
+
+    // FIX: On startup, always stop any channel that may have been left open
+    // by a previous crashed/exited session. Without this, restarting the app
+    // while the "No Signal" screen is showing will leave it stuck.
+    try {
+        if (typeof exitLiveTv === 'function') {
+            exitLiveTv();
+        }
+    } catch(e) {
+        console.warn('[App Startup] exitLiveTv on startup threw:', e);
+    }
     
     // Ensure we're in HCAP_MODE_1 (normal mode)
     if (typeof hcap !== "undefined" && hcap.mode) {
@@ -214,11 +225,15 @@ utilities.updatingTimeAndDate = function () {
             map[p.type] = p.value;
         });
 
+        // Parse and pad values properly
+        var hour24 = parseInt(map.hour, 10);
+        var hour12 = hour24 % 12 || 12;
+        
         var tokens = {
-            'hh': pad(map.hour12),
-            'HH': pad(map.hour),
-            'mm': pad(map.minute),
-            'ss': pad(map.second)
+            'hh': pad(hour12),
+            'HH': pad(hour24),
+            'mm': pad(parseInt(map.minute, 10)),
+            'ss': pad(parseInt(map.second, 10))
         };
 
         return format.replace(/hh|HH|mm|ss/g, function (match) {
@@ -243,21 +258,19 @@ utilities.updatingTimeAndDate = function () {
         // Remove AM/PM if present (you already wanted this)
         var timeFormat = rawFormat.replace(/\s*[aA]$/, '');
 
-        // 🔹 Get time parts for the given timezone
+        // Determine if 12-hour format is needed
+        var is12Hour = rawFormat.toLowerCase().indexOf('hh') !== -1;
+
+        // ðŸ”¹ Get time parts for the given timezone
         var timeFormatter = new Intl.DateTimeFormat('en-US', {
             timeZone: timeZone,
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: rawFormat.indexOf('hh') !== -1
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: false  // Always get 24-hour first, we'll convert if needed
         });
 
         var timeParts = timeFormatter.formatToParts(new Date());
-
-        // Add hour12 manually for formatting support
-        var hourPart = timeParts.find(p => p.type === 'hour');
-        var hour12 = (parseInt(hourPart.value, 10) % 12) || 12;
-        timeParts.push({ type: 'hour12', value: hour12 });
 
         var timeStr = formatTimeFromParts(timeParts, timeFormat);
 
@@ -496,6 +509,16 @@ function setDefaultIconForChannels(data, lgAppId) {
   return null;
 }
 
+function getCustomAppUrl(data,lgAppId) {
+    if(!data || !data.length || !lgAppId) return null;
+    for(var i = 0; i< data.length; i++) {
+        var appData = data[i];
+        if(appData && typeof appData.lg_app_id !== 'undefined' && String(appData.lg_app_id) === String(lgAppId)) {
+            return appData.app_url;
+        }
+    }
+}
+
 function normalizeId(value) {
   if (
     value === null ||
@@ -531,6 +554,103 @@ function setTheRmsIpProperty(statusIp) {
     } catch (e) {
         console.error("Exception calling hcap.property.setProperty:", e);
     }
+}
+
+function updateCurrentNetworkType(callback) {
+    try {
+        if (!window.hcap || !hcap.network || !hcap.network.getNetworkInformation) {
+            lastNetworkType = "";
+            if (typeof callback === "function") callback(lastNetworkType);
+            return;
+        }
+
+        hcap.network.getNetworkInformation({
+            onSuccess: function (s) {
+
+                console.log("s--------------------------------------->", s)
+                if (s.ethernet_plugged) {
+                    lastNetworkType = "ethernet";
+                }
+                else if (s.wifi_plugged && s.networkMode === hcap.network.NetworkMode.WIRELESS) {
+                    lastNetworkType = "wifi";
+                }
+                else {
+                    lastNetworkType = "";
+                }
+
+                console.log("Detected network type:", lastNetworkType);
+
+                if (typeof callback === "function") callback(lastNetworkType);
+            },
+            onFailure: function () {
+                lastNetworkType = "";
+                if (typeof callback === "function") callback(lastNetworkType);
+            }
+        });
+    } catch (e) {
+        console.error("Error in updateCurrentNetworkType:", e);
+        lastNetworkType = "";
+        if (typeof callback === "function") callback(lastNetworkType);
+    }
+}
+
+function gotoHomeSCreenFromDisconnectPage() {
+
+    try {
+        var defaultLangId = "";
+
+        if (
+			Main &&
+			Main.templateApiData &&
+			Main.templateApiData.language_detail &&
+			Main.templateApiData.language_detail.length > 0 &&
+			Main.templateApiData.language_detail[0] &&
+			Main.templateApiData.language_detail[0].language_uuid
+		) {
+            defaultLangId = Main.templateApiData.language_detail[0].language_uuid;
+        }
+        var langId = Main.clickedLanguage ? Main.clickedLanguage : defaultLangId
+        
+        var cached = [];
+        
+        if (Main && Main.cachedHomeByLang && Main.cachedHomeByLang[langId]) {
+          cached = Main.cachedHomeByLang[langId];
+        }
+
+        if (cached.length) {
+          Main.renderHomePage(cached);
+        }else if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
+          var items = Main.homePageData
+            .filter(function (x) {
+                return x && x.is_active === true && x.language_uuid === langId;
+            })
+            .sort(function (a, b) {
+                return (a.priority_order || 0) - (b.priority_order || 0);
+            });
+
+          if (items.length) {
+            Main.cacheHomeImageAssetsByLanguage(
+                items,
+                langId,
+                function (cachedGroup) {
+                    Main.cachedHomeByLang[langId] = cachedGroup || [];
+                    Main.renderHomePage(Main.cachedHomeByLang[langId]);
+                }
+            );
+          }
+        } else {
+          Main.getHomeData(function () {
+            // utilities.genricPopup("Main.getHomeData(function () { inner", 'info');
+            var items2 =
+              (Main.cachedHomeByLang && Main.cachedHomeByLang[langId]) || [];
+            if (items2.length) Main.renderHomePage(items2);
+          });
+        }
+      } catch (e) {
+        // utilities.genricPopup("Wake render error:" + e, 'info');
+        console.error("Wake render error:", e);
+      }
+
 }
 
 /**

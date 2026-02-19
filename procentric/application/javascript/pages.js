@@ -695,6 +695,28 @@ Util.errorCastingScreen = function () {
   return Text;
 };
 
+Util.customHdmiDisconnectedPage = function () {
+
+  console.log("customHdmiDisconnectedPage called----------------->")
+
+  var Text = '';
+
+  Text += '<div class="customHdmiDisconnectedPage">';
+
+  Text += '  <div class="topHdmiBar">';
+  Text += '     <img src="images/hdmi_HdmiError.png" alt="HDMI"/>';
+  Text += '  </div>';
+
+  Text += '  <h1 class="titleText">To ensure proper TV services, please do not unplug the set-top box HDMI or MPI cable.</h1>';
+
+  Text += '  <p class="subText line1">HDMI OR MPI CABLE DISCONNECTED</p>';
+
+  Text += '  <p class="subText line2">Disconnecting this cable will send an alert to hotel staff.</p>';
+  Text += '</div>';
+
+  return Text;
+}
+
 /*=====================================================
 LG CHANNEL DATA SHOWS
 ===================================================== */
@@ -1179,7 +1201,6 @@ Util.liveTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
   var Text = "";
 
   var channel = channelData[0];
-  console.log("channelData--------------------->", channelData);
   console.log("channel before selection--------------------->", channel);
   console.log("presentPagedetails.currentLiveChannelId--------------------->", presentPagedetails.currentLiveChannelId);
   if( normalizeId(presentPagedetails.currentLiveChannelId)) {
@@ -1187,7 +1208,12 @@ Util.liveTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
     channel = channelData.find( function (ch) {
       return String(ch.epg_id) === String(normalizeId(presentPagedetails.currentLiveChannelId));
     })
+  }else if(normalizeId(presentPagedetails.currentLiveChannelUuid)) {
+    channel = channelData.find( function (ch) {
+      return String(ch.channel_uuid) === String(normalizeId(presentPagedetails.currentLiveChannelUuid));
+    })
   }
+
   console.log("Selected channel for overlay--------------------->", channel);
   var defaultIcon = setDefaultIconForChannels(Main.homePageData, "LIVETV")
 
@@ -1371,7 +1397,7 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
 
       var shortTitle = (ch.title || ch.name || '').length > 16 ? (ch.title || ch.name || '').substring(0, 16) + '...' : (ch.title || ch.name || '');
       
-      Text += '<div class="live-tv-guide-channel-row' + focusClass + '" id="live-tv-channel-row-' + j + '" data-channel-uuid="' + ch.epg_id + '" data-channel-index="' + j + '">';
+      Text += '<div class="live-tv-guide-channel-row' + focusClass + '" id="live-tv-channel-row-' + j + '" channel_uuid="' + ch.channel_uuid + '" data-channel-uuid="' + ch.epg_id + '" data-channel-index="' + j + '">';
       Text += '<div class="live-tv-guide-channel-cell"><div class="live-channel-logo-box"><img src="' + ch.icon + '" onerror="this.src = macro(this).attr(\'altSrc\')" altSrc="'+ defaultIcon.icon + '" class="live-channel-logo-img"></div><div class="live-channel-name-text">' + shortTitle + '</div></div>';
       
       if(Now){

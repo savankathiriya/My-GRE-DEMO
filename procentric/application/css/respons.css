@@ -1049,4 +1049,33 @@
     font-size: 12px;
   }
 
+/* HDMI Disconnected Page — 1280x720 */
+
+.customHdmiDisconnectedPage {
+  padding: 28px;
+}
+
+.customHdmiDisconnectedPage .topHdmiBar {
+  margin-bottom: 32px;
+}
+
+.customHdmiDisconnectedPage .topHdmiBar img {
+  width: 110px;
+}
+
+.customHdmiDisconnectedPage .titleText {
+  font-size: 26px;
+  max-width: 620px;
+  margin: 0 0 28px 0;
+}
+
+.customHdmiDisconnectedPage .subText.line1 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+.customHdmiDisconnectedPage .subText.line2 {
+  font-size: 15px;
+}
+
 }

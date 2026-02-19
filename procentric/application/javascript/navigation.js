@@ -156,7 +156,7 @@ Navigation.languagePageNavigation = function (event) {
       if (cached.length > 0) {
         // Already image-cached items for this language
 
-        Main.renderHomePage(cached, textOfLang);
+        Main.renderHomePage(cached);
         break;
       }
 
@@ -177,7 +177,7 @@ Navigation.languagePageNavigation = function (event) {
             uuid,
             function (cachedGroup) {
               Main.cachedHomeByLang[uuid] = cachedGroup || [];
-              Main.renderHomePage(Main.cachedHomeByLang[uuid], textOfLang);
+              Main.renderHomePage(Main.cachedHomeByLang[uuid]);
             }
           );
           break;
@@ -189,7 +189,7 @@ Navigation.languagePageNavigation = function (event) {
         var items2 =
           (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
         if (items2.length) {
-          Main.renderHomePage(items2, textOfLang);
+          Main.renderHomePage(items2);
         } else {
           console.error("No cached items available for language:", uuid);
           // You can show a toast or fallback UI here if you want.
@@ -695,10 +695,10 @@ function stopAndClearMedia() {
 
   // call shutDown after short delay to ensure TV input is released
   try {
-    if(window.hcap && hcap.media && hcap.media.shutDown) {
+    if(window.hcap && hcap.Media && hcap.Media.shutDown) {
       setTimeout( function () {
         try {
-          hcap.media.shutDown({
+          hcap.Media.shutDown({
             onSuccess: function () { console.log('hcap.Media.shutDown success'); },
             onFailure: function (f) { console.warn('hcap.Media.shutDown failed', f); }
           });
@@ -1370,6 +1370,80 @@ Navigation.lgLgDemoPlayers = function (event) {
         break;
       }
       
+      case tvKeyCode.ChannelUp:
+      case tvKeyCode.ChannelDown: {
+        // ── LG-TV overlay: step through lgLgChannelIdDetails by one ──
+        var lgChannels = presentPagedetails.lgLgChannelIdDetails;
+        if (!lgChannels || lgChannels.length === 0) {
+          console.warn('[lgLgDemoPlayers] No channel list available for ChannelUp/Down');
+          break;
+        }
+
+        // Find current channel index by matching stored currentChannelId
+        var lgCurrentId   = String(presentPagedetails.currentChannelId || '');
+        var lgCurrentIdx  = -1;
+        for (var ci = 0; ci < lgChannels.length; ci++) {
+          if (String(lgChannels[ci].channel_id) === lgCurrentId) {
+            lgCurrentIdx = ci;
+            break;
+          }
+        }
+
+        // Default to 0 if not found
+        if (lgCurrentIdx === -1) lgCurrentIdx = 0;
+
+        var lgNextIdx;
+        if (keycode === tvKeyCode.ChannelUp) {
+          // ChannelUp → next channel (wrap around)
+          lgNextIdx = (lgCurrentIdx + 1) < lgChannels.length ? lgCurrentIdx + 1 : 0;
+        } else {
+          // ChannelDown → previous channel (wrap around)
+          lgNextIdx = (lgCurrentIdx - 1) >= 0 ? lgCurrentIdx - 1 : lgChannels.length - 1;
+        }
+
+        var lgNextChannel = lgChannels[lgNextIdx];
+        console.log('[lgLgDemoPlayers] ChannelUp/Down → index', lgNextIdx, 'channel:', lgNextChannel);
+
+        if (lgNextChannel && lgNextChannel.ch_media_static_url) {
+          // Update stored current channel id
+          presentPagedetails.currentChannelId = String(lgNextChannel.channel_id);
+
+          // Save as the last-selected position so guide opens here next time
+          presentPagedetails.savedChannelIndex = lgNextIdx;
+
+          // Play the new channel
+          Navigation.playSelectedChannel(lgNextChannel.ch_media_static_url);
+
+          // Refresh the overlay to show the new channel's info, then show it
+          macro('#mainContent').html('');
+          macro('#mainContent').html(Util.lgLgTvGuideCurrentPlayingOverlay(
+            presentPagedetails.lgLgChannelIdDetails,
+            presentPagedetails.lgLgChannelMetaDetails
+          ));
+          macro('#mainContent').show();
+
+          var lgOverlay = macro('.lg-tv-overlay');
+          if (lgOverlay.length) {
+            lgOverlay.css({ 'opacity': '0', 'bottom': '44px', 'display': 'flex' });
+            requestAnimationFrame(function () {
+              lgOverlay.css('opacity', '1');
+              // Auto-hide after 10 seconds
+              setTimeout(function () {
+                if (lgOverlay.is(':visible')) {
+                  lgOverlay.animate({ bottom: '-300px' }, 800, function () {
+                    lgOverlay.css('display', 'none');
+                    lgOverlay.css('bottom', '44px');
+                  });
+                }
+              }, 10000);
+            });
+          }
+        } else {
+          console.warn('[lgLgDemoPlayers] Next channel has no URL, skipping playback');
+        }
+        break;
+      }
+
       case tvKeyCode.ArrowLeft:
       case tvKeyCode.ArrowRight: {
         break;
@@ -1904,6 +1978,7 @@ Navigation.demoPlayers = function (event) {
       case tvKeyCode.Enter: {
         var selectedChannelRow = macro('#live-tv-channel-row-' + currentIndex);
         var channelUuid = selectedChannelRow.attr('data-channel-uuid');
+        var channel_uuid = selectedChannelRow.attr('channel_uuid');
         console.log('[Live TV Guide] Channel selected:', channelUuid, 'Index:', currentIndex);
         
         // SAVE EXACT POSITION
@@ -1911,18 +1986,36 @@ Navigation.demoPlayers = function (event) {
         
         // Find the selected channel in liveTvChannelIdDetails
         var selectedChannel = null;
-        for (var i = 0; i < presentPagedetails.liveTvChannelIdDetails.length; i++) {
-          if (String(presentPagedetails.liveTvChannelIdDetails[i].epg_id) === String(channelUuid)) {
-            selectedChannel = presentPagedetails.liveTvChannelIdDetails[i];
-            break;
+
+        console.log("channelUuid----------------------------------------> ", channelUuid);
+        console.log("channel_uuid----------------------------------------> ", channel_uuid);
+
+        if(channelUuid != null && channelUuid !== "null" && channelUuid !== ""){
+          for (var i = 0; i < presentPagedetails.liveTvChannelIdDetails.length; i++) {
+            if (String(presentPagedetails.liveTvChannelIdDetails[i].epg_id) === String(channelUuid)) {
+              console.log("called------------------------------------->1")
+              selectedChannel = presentPagedetails.liveTvChannelIdDetails[i];
+              break;
+            }
+          }
+        } else {
+          for (var i = 0; i < presentPagedetails.liveTvChannelIdDetails.length; i++) {
+            if (String(presentPagedetails.liveTvChannelIdDetails[i].channel_uuid) === String(channel_uuid)) {
+              console.log("called------------------------------------->2")
+              selectedChannel = presentPagedetails.liveTvChannelIdDetails[i];
+              break;
+            }
           }
         }
+
+        console.log("live tv selected channel details----------------->", selectedChannel);
         
         if (selectedChannel) {
           console.log('[Live TV Guide] Playing channel:', selectedChannel);
           
           // Store current channel uuid for overlay display
           presentPagedetails.currentLiveChannelId = channelUuid;
+          presentPagedetails.currentLiveChannelUuid = channel_uuid;
           
           // Play the selected channel (UDP)
           if (selectedChannel.lg_ch_url) {
@@ -2035,6 +2128,125 @@ Navigation.demoPlayers = function (event) {
         break;
       }
       
+      case tvKeyCode.ChannelUp:
+      case tvKeyCode.ChannelDown: {
+
+        console.log("called------------------------------------------>")
+        // ── Live TV overlay: step through liveTvChannelIdDetails by one ──
+        var liveChannels = presentPagedetails.liveTvChannelIdDetails;
+        if (!liveChannels || liveChannels.length === 0) {
+          console.warn('[demoPlayers] No channel list available for ChannelUp/Down');
+          break;
+        }
+
+        // Find current channel index. We may have epg_id or channel_uuid stored.
+        var liveCurrentEpgId  = String(presentPagedetails.currentLiveChannelId  || '');
+        var liveCurrentUuid   = String(presentPagedetails.currentLiveChannelUuid || '');
+        var liveCurrentIdx    = -1;
+        for (var li = 0; li < liveChannels.length; li++) {
+          var ch = liveChannels[li];
+          if (
+            (liveCurrentEpgId !== '' && liveCurrentEpgId !== null && liveCurrentEpgId !== 'null' && String(ch.epg_id) === liveCurrentEpgId) ||
+            (liveCurrentUuid  !== '' && liveCurrentUuid  !== null && liveCurrentUuid  !== 'null' && String(ch.channel_uuid) === liveCurrentUuid)
+          ) {
+            liveCurrentIdx = li;
+            break;
+          }
+        }
+
+        // Default to 0 if not found
+        if (liveCurrentIdx === -1) liveCurrentIdx = 0;
+
+        var liveNextIdx;
+        if (keycode === tvKeyCode.ChannelUp) {
+          // ChannelUp → next channel (wrap around)
+          liveNextIdx = (liveCurrentIdx + 1) < liveChannels.length ? liveCurrentIdx + 1 : 0;
+        } else {
+          // ChannelDown → previous channel (wrap around)
+          liveNextIdx = (liveCurrentIdx - 1) >= 0 ? liveCurrentIdx - 1 : liveChannels.length - 1;
+        }
+
+        var liveNextChannel = liveChannels[liveNextIdx];
+        console.log('[demoPlayers] ChannelUp/Down → index', liveNextIdx, 'channel:', liveNextChannel);
+
+        if (liveNextChannel) {
+          // Update stored current channel identifiers
+          presentPagedetails.currentLiveChannelId   = String(liveNextChannel.epg_id      || '');
+          presentPagedetails.currentLiveChannelUuid  = String(liveNextChannel.channel_uuid || '');
+
+          // Save as last-selected position so guide opens here next time
+          presentPagedetails.savedLiveChannelIndex = liveNextIdx;
+
+          // Play the new channel using the same URL-type dispatch as the Enter handler
+          if (liveNextChannel.lg_ch_url) {
+            var liveChUrl = liveNextChannel.lg_ch_url;
+
+            if (/^udp:\/\/\d{1,3}(\.\d{1,3}){3}:\d+$/.test(liveChUrl)) {
+              var liveUrlWithoutPrefix = liveChUrl.replace('udp://', '');
+              var liveParts = liveUrlWithoutPrefix.split(':');
+              hcap.channel.requestChangeCurrentChannel({
+                channelType: hcap.channel.ChannelType.IP,
+                ip: liveParts[0],
+                port: parseInt(liveParts[1]),
+                ipBroadcastType: hcap.channel.IpBroadcastType.UDP,
+                onSuccess: function () { console.log('[demoPlayers ChannelUp/Down] UDP switch success'); },
+                onFailure: function (e) { console.error('[demoPlayers ChannelUp/Down] UDP switch failed:', e); }
+              });
+            } else if (/^\d+-\d+$/.test(liveChUrl)) {
+              var liveMajMin = liveChUrl.split('-');
+              hcap.channel.requestChangeCurrentChannel({
+                channelType: hcap.channel.ChannelType.RF,
+                majorNumber: parseInt(liveMajMin[0]),
+                minorNumber: parseInt(liveMajMin[1]),
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
+                onSuccess: function () { console.log('[demoPlayers ChannelUp/Down] RF major-minor switch success'); },
+                onFailure: function (e) { console.error('[demoPlayers ChannelUp/Down] RF major-minor switch failed:', e); }
+              });
+            } else if (/^\d+$/.test(liveChUrl)) {
+              hcap.channel.requestChangeCurrentChannel({
+                channelType: hcap.channel.ChannelType.RF,
+                logicalNumber: parseInt(liveChUrl),
+                rfBroadcastType: hcap.channel.RfBroadcastType.CABLE,
+                onSuccess: function () { console.log('[demoPlayers ChannelUp/Down] RF logical switch success'); },
+                onFailure: function (e) { console.error('[demoPlayers ChannelUp/Down] RF logical switch failed:', e); }
+              });
+            } else {
+              Navigation.playSelectedChannel(liveChUrl);
+            }
+          } else {
+            console.warn('[demoPlayers] Next channel has no lg_ch_url, skipping playback');
+          }
+
+          // Refresh the overlay to show the new channel's info, then show it
+          macro('#mainContent').html('');
+          macro('#mainContent').html(Util.liveTvGuideCurrentPlayingOverlay(
+            presentPagedetails.liveTvChannelIdDetails,
+            presentPagedetails.liveTvChannelMetaDetails
+          ));
+          macro('#mainContent').show();
+
+          var liveTvOverlay = macro('.live-tv-overlay');
+          if (liveTvOverlay.length) {
+            liveTvOverlay.css({ 'opacity': '0', 'bottom': '44px', 'display': 'flex' });
+            requestAnimationFrame(function () {
+              liveTvOverlay.css('opacity', '1');
+              // Auto-hide after 10 seconds
+              setTimeout(function () {
+                if (liveTvOverlay.is(':visible')) {
+                  liveTvOverlay.animate({ bottom: '-300px' }, 800, function () {
+                    liveTvOverlay.css('display', 'none');
+                    liveTvOverlay.css('bottom', '44px');
+                  });
+                }
+              }, 10000);
+            });
+          }
+        } else {
+          console.warn('[demoPlayers] Next channel not found at index', liveNextIdx);
+        }
+        break;
+      }
+
       case tvKeyCode.ArrowLeft:
       case tvKeyCode.ArrowRight: {
         break;
@@ -2082,19 +2294,25 @@ Navigation.demoPlayers = function (event) {
             Main.channelMetaRefreshInterval = null;
           }
         } catch(e) {}
-        
-        // Clear current channel and navigate back
-        try {
-          presentPagedetails.currentLiveChannelId = undefined;
-          presentPagedetails.showingLiveTvGuide = false;
-          Main.previousPage();
-        } catch(e) {}
+
+        try { resetHdmiToLIveTv(); } catch (e) { console.warn("resetHdmiToLIveTv error:", e); }
+        try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
+        try { exitLiveTv(); } catch (eExit) { console.warn('exitLiveTv threw', eExit); }
 
         // Clean up overlays and UI elements
         try {
           macro('.live-tv-overlay').css('display', 'none');
           macro('.live-tv-guide-container').css('display', 'none');
         } catch(e) {console.warn('Error hiding overlays:', e);}
+
+
+        // Clear current channel and navigate back
+        try {
+          presentPagedetails.currentLiveChannelId = undefined;
+          presentPagedetails.currentLiveChannelUuid = undefined;
+          presentPagedetails.showingLiveTvGuide = false;
+          Main.previousPage();
+        } catch(e) {}
 
         // Reset background
         try {
@@ -2109,7 +2327,7 @@ Navigation.demoPlayers = function (event) {
           }
         } catch (e) {}
 
-        try { exitLiveTv(); } catch(e) {}
+        // try { exitLiveTv(); } catch(e) {}
         break;
       }
     }
