@@ -21,6 +21,12 @@ var CanvasShapes = (function() {
         var shapeType = el.type.toLowerCase();
         console.log('[CanvasShapes] Rendering:', shapeType, '-', el.name || el.id);
 
+        // VIDEO BACKGROUND: render as DOM overlay (canvas draws are invisible over video bg)
+        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+            _renderAsDom(el);
+            return;
+        }
+
         ctx.save();
 
         // Apply transformations
@@ -394,9 +400,159 @@ var CanvasShapes = (function() {
         }
     }
 
+
+    /* ── DOM overlay for video background mode ──────────────────── */
+    var _shapeDomOverlays = [];
+
+    function _renderAsDom(el) {
+        var elId = String(el.id || el.name || Date.now());
+        var stale = document.querySelectorAll('[data-canvas-shape-id="' + elId + '"]');
+        for (var s = 0; s < stale.length; s++) {
+            if (stale[s].parentNode) stale[s].parentNode.removeChild(stale[s]);
+        }
+
+        var container = (typeof CanvasVideoBgHelper !== 'undefined')
+            ? CanvasVideoBgHelper.getContainer()
+            : document.getElementById('our-hotel-container') || document.body;
+
+        var x       = Math.floor(el.x      || 0);
+        var y       = Math.floor(el.y      || 0);
+        var w       = Math.ceil(el.width   || 0);
+        var h       = Math.ceil(el.height  || 0);
+        var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
+        var shapeType = el.type.toLowerCase();
+
+        /* Most shapes can be approximated with CSS.
+           Complex shapes (star, polygon, arrow, etc.) are drawn on a
+           temporary <canvas> element inside the DOM overlay.           */
+        var wrap = document.createElement('div');
+        wrap.setAttribute('data-canvas-shape-id', elId);
+        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;padding:0;overflow:hidden;';
+        wrap.style.left    = x + 'px';
+        wrap.style.top     = y + 'px';
+        wrap.style.width   = w + 'px';
+        wrap.style.height  = h + 'px';
+        wrap.style.opacity = String(opacity);
+        wrap.style.zIndex  = String(zIndex);
+
+        if (el.rotation && el.rotation !== 0) {
+            wrap.style.transform       = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.webkitTransform = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.transformOrigin = 'center center';
+        }
+
+        /* Draw the shape onto a mini canvas inside the wrapper */
+        var miniCanvas = document.createElement('canvas');
+        miniCanvas.width  = w;
+        miniCanvas.height = h;
+        miniCanvas.style.cssText = 'position:absolute;top:0;left:0;display:block;';
+        var mCtx = miniCanvas.getContext('2d');
+
+        if (mCtx) {
+            /* Reset and fake an el with x=0,y=0 for the mini canvas */
+            var fakeEl = {};
+            for (var k in el) { if (el.hasOwnProperty(k)) fakeEl[k] = el[k]; }
+            fakeEl.x = 0; fakeEl.y = 0; fakeEl.opacity = 1;
+
+            /* Use CanvasBase.applyTransformations then call the shape renderer */
+            mCtx.clearRect(0, 0, w, h);
+            mCtx.save();
+            /* No translate needed -- fakeEl.x/y = 0 */
+            try {
+                switch (shapeType) {
+                    case 'circle':    _drawCircle(mCtx, fakeEl);    break;
+                    case 'rectangle': _drawRect(mCtx, fakeEl);      break;
+                    case 'line':      _drawLine(mCtx, fakeEl);      break;
+                    case 'triangle':  _drawTriangle(mCtx, fakeEl);  break;
+                    case 'diamond':   _drawDiamond(mCtx, fakeEl);   break;
+                    default:          _drawRect(mCtx, fakeEl);      break;
+                }
+            } catch (e) {
+                console.warn('[CanvasShapes] mini-canvas draw error:', e);
+            }
+            mCtx.restore();
+        }
+
+        wrap.appendChild(miniCanvas);
+
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        container.appendChild(wrap);
+        _shapeDomOverlays.push(wrap);
+        console.log('[CanvasShapes] DOM overlay created:', shapeType, elId);
+    }
+
+    /* Lightweight shape draw helpers for the mini canvas (fakeEl.x=0,y=0) */
+    function _drawCircle(ctx, el) {
+        var cx = el.width/2, cy = el.height/2;
+        var r  = Math.min(el.width, el.height)/2;
+        ctx.fillStyle   = el.backgroundColor || '#ef4444';
+        ctx.strokeStyle = el.borderColor     || '#dc2626';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI);
+        ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+    function _drawRect(ctx, el) {
+        var br = el.borderRadius || 0;
+        ctx.fillStyle   = el.backgroundColor || '#3b82f6';
+        ctx.strokeStyle = el.borderColor     || '#1e40af';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        if (br > 0 && typeof CanvasBase !== 'undefined') {
+            CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, br);
+            ctx.fill();
+            if ((el.borderWidth||0) > 0) ctx.stroke();
+        } else {
+            ctx.fillRect(0, 0, el.width, el.height);
+            if ((el.borderWidth||0) > 0) ctx.strokeRect(0, 0, el.width, el.height);
+        }
+    }
+    function _drawLine(ctx, el) {
+        ctx.fillStyle   = el.backgroundColor || '#31dd53';
+        ctx.globalAlpha = typeof el.strokeOpacity !== 'undefined' ? el.strokeOpacity : 1;
+        ctx.fillRect(0, 0, el.width, el.height);
+    }
+    function _drawTriangle(ctx, el) {
+        var d = el.direction || 'up';
+        ctx.fillStyle   = el.backgroundColor || '#10b981';
+        ctx.strokeStyle = el.borderColor     || '#059669';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath();
+        switch (d) {
+            case 'down': ctx.moveTo(0,0); ctx.lineTo(el.width,0); ctx.lineTo(el.width/2,el.height); break;
+            case 'left': ctx.moveTo(0,el.height/2); ctx.lineTo(el.width,0); ctx.lineTo(el.width,el.height); break;
+            case 'right': ctx.moveTo(0,0); ctx.lineTo(el.width,el.height/2); ctx.lineTo(0,el.height); break;
+            default: ctx.moveTo(el.width/2,0); ctx.lineTo(el.width,el.height); ctx.lineTo(0,el.height);
+        }
+        ctx.closePath(); ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+    function _drawDiamond(ctx, el) {
+        ctx.fillStyle   = el.backgroundColor || '#06b6d4';
+        ctx.strokeStyle = el.borderColor     || '#0891b2';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath();
+        ctx.moveTo(el.width/2,0); ctx.lineTo(el.width,el.height/2);
+        ctx.lineTo(el.width/2,el.height); ctx.lineTo(0,el.height/2);
+        ctx.closePath(); ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+
+    function cleanupShapes() {
+        for (var i = 0; i < _shapeDomOverlays.length; i++) {
+            if (_shapeDomOverlays[i] && _shapeDomOverlays[i].parentNode)
+                _shapeDomOverlays[i].parentNode.removeChild(_shapeDomOverlays[i]);
+        }
+        _shapeDomOverlays = [];
+    }
+
     // Public API
     return {
-        render: render
+        render: render,
+        cleanup: cleanupShapes
     };
 })();
 

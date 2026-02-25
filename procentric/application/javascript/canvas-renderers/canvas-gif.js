@@ -105,9 +105,10 @@ var CanvasGif = (function() {
         // Prevent interaction
         gifOverlay.style.pointerEvents = 'none';
         
-        // Z-index
-        var zIndex = el.zIndex || 'auto';
-        gifOverlay.style.zIndex = zIndex;
+        // Z-index: must be above the canvas (z-index:2) so GIFs appear on top
+        // of the canvas layer. Use element zIndex if set, else default to 10.
+        var zIndex = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
+        gifOverlay.style.zIndex = String(zIndex);
         console.log('[CanvasGif]   zIndex:', zIndex);
         
         // Object fit (similar to canvas drawImageWithFit)

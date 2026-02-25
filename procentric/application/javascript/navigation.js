@@ -608,24 +608,59 @@ Navigation.ourHotelPageNavigation = function (event) {
         case 461:
         case 10009:
             console.log('[Navigation] Exiting OurHotel page');
-            
-            // Clean up canvas
+
+            // ── Step 1 (INSTANT): Show loading spinner to cover the screen.
+            //    This immediately hides the video background + all canvas overlays
+            //    from the user's view while cleanup runs behind it.
             try {
-                var canvas = document.getElementById('templateCanvas');
-                if (canvas) {
-                    var ctx = canvas.getContext('2d');
-                    if (ctx) {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    }
+                if (typeof Main !== 'undefined' && Main.ShowLoading) {
+                    Main.ShowLoading();
                 }
-            } catch (e) {
-                console.warn('[Navigation] Canvas cleanup failed:', e);
-            }
-            
-            // Navigate back
-            if (typeof Main !== 'undefined' && Main.previousPage) {
-                Main.previousPage();
-            }
+            } catch (e) {}
+
+            // ── Step 2: Run all cleanup after a short delay so the spinner
+            //    has time to paint before heavy DOM removal starts.
+            setTimeout(function () {
+
+                // Stop HLS streams
+                try {
+                    if (typeof CanvasAction !== 'undefined' && CanvasAction.stopHlsBackgroundVideos) {
+                        CanvasAction.stopHlsBackgroundVideos();
+                    }
+                } catch (e) {}
+
+                // Full canvas/overlay cleanup
+                try {
+                    if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.cleanup) {
+                        CanvasRenderer.cleanup();
+                    }
+                } catch (e) {
+                    try { if (typeof CanvasBackground !== 'undefined') CanvasBackground.cleanup(); } catch (_) {}
+                    try { if (typeof CanvasAction    !== 'undefined') CanvasAction.cleanup();     } catch (_) {}
+                }
+
+                // Remove bg-video-wrap explicitly (it lives on document.body, outside mainContent)
+                try {
+                    var _bgWrap = document.getElementById('bg-video-wrap');
+                    if (_bgWrap && _bgWrap.parentNode) { _bgWrap.parentNode.removeChild(_bgWrap); }
+                } catch (e) {}
+
+                // Restore body background (set to 'none' for video mode)
+                try { document.body.style.background = ''; } catch (e) {}
+
+                // Hide loading and navigate back
+                try {
+                    if (typeof Main !== 'undefined' && Main.HideLoading) {
+                        Main.HideLoading();
+                    }
+                } catch (e) {}
+
+                if (typeof Main !== 'undefined' && Main.previousPage) {
+                    Main.previousPage();
+                }
+
+            }, 1500);
+
             break;
     }
 };

@@ -228,22 +228,76 @@ var CanvasBase = (function() {
     }
 
     /**
-     * Load image with caching
+     * Image cache: keyed by src URL.
+     * Each entry is { img: HTMLImageElement, loaded: bool, callbacks: [] }
+     */
+    var _imageCache = {};
+
+    /**
+     * Load image with caching.
+     * If the same src has already been loaded, onLoad is called synchronously
+     * with the cached Image object — no redundant network request.
+     * If it is still loading, the callback is queued and called once it resolves.
      */
     function loadImage(src, onLoad, onError) {
-        var img = new Image();
-        img.crossOrigin = 'anonymous';
-        
-        img.onload = function() {
-            if (onLoad) onLoad(img);
-        };
-        
-        img.onerror = function() {
-            console.warn('[CanvasBase] Image load failed:', src);
+        if (!src) {
             if (onError) onError();
+            return;
+        }
+
+        // Already fully loaded — call back synchronously
+        if (_imageCache[src] && _imageCache[src].loaded) {
+            if (onLoad) onLoad(_imageCache[src].img);
+            return;
+        }
+
+        // Already in-flight — just queue the callback
+        if (_imageCache[src] && !_imageCache[src].loaded) {
+            if (onLoad)  _imageCache[src].callbacks.push({ onLoad: onLoad, onError: onError });
+            return;
+        }
+
+        // First request for this src — start loading
+        var entry = { img: new Image(), loaded: false, callbacks: [] };
+        if (onLoad || onError) {
+            entry.callbacks.push({ onLoad: onLoad, onError: onError });
+        }
+        _imageCache[src] = entry;
+
+        entry.img.crossOrigin = 'anonymous';
+
+        entry.img.onload = function() {
+            entry.loaded = true;
+            var cbs = entry.callbacks.slice();
+            entry.callbacks = [];
+            for (var i = 0; i < cbs.length; i++) {
+                if (cbs[i].onLoad) cbs[i].onLoad(entry.img);
+            }
         };
-        
-        img.src = src;
+
+        entry.img.onerror = function() {
+            console.warn('[CanvasBase] Image load failed:', src);
+            delete _imageCache[src];   // allow retry later
+            var cbs = entry.callbacks.slice();
+            entry.callbacks = [];
+            for (var i = 0; i < cbs.length; i++) {
+                if (cbs[i].onError) cbs[i].onError();
+            }
+        };
+
+        entry.img.src = src;
+    }
+
+    /**
+     * Return the cached Image for a src (or null if not yet loaded).
+     * Used by updateClocks() to synchronously repaint image elements
+     * that sit behind a clock without needing any async callback.
+     */
+    function getCachedImage(src) {
+        if (src && _imageCache[src] && _imageCache[src].loaded) {
+            return _imageCache[src].img;
+        }
+        return null;
     }
 
     // Public API
@@ -259,6 +313,7 @@ var CanvasBase = (function() {
         drawElementBackground: drawElementBackground,
         getFontString: getFontString,
         parseColorWithOpacity: parseColorWithOpacity,
-        loadImage: loadImage
+        loadImage: loadImage,
+        getCachedImage: getCachedImage
     };
 })();

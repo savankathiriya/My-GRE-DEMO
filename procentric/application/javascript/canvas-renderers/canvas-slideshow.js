@@ -2,6 +2,11 @@
  * ====================================================================
  * CANVAS SLIDESHOW RENDERER - GUARANTEED WORKING VERSION
  * ULTRA-SIMPLIFIED - NO BLACK BOXES, IMAGES ALWAYS VISIBLE
+ *
+ * FIX: After each slide is redrawn, we ask CanvasRenderer to retake
+ *      its canvas snapshot. This ensures that the next clock tick
+ *      restores the correct (updated slide) pixels under the clock,
+ *      not stale pixels from a previous slide.
  * ====================================================================
  */
 
@@ -15,7 +20,13 @@ var CanvasSlideshow = (function() {
      */
     function render(ctx, element) {
         console.log('[CanvasSlideshow] 🎬 Rendering slideshow:', element.name || element.id);
-        
+
+        // VIDEO BACKGROUND: render as DOM overlay
+        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+            _renderAsDomSlideshow(element);
+            return;
+        }
+
         // Validate slides
         if (!element.slides || !Array.isArray(element.slides) || element.slides.length === 0) {
             console.error('[CanvasSlideshow] ❌ NO SLIDES FOUND!');
@@ -153,20 +164,18 @@ var CanvasSlideshow = (function() {
         ctx.clip();
         console.log('[CanvasSlideshow] ✂️ Clipping region created');
         
-        // 🔥 CRITICAL: Only draw background if EXPLICITLY specified
-        // DO NOT draw black by default!
-        if (element.backgroundColor && 
-            element.backgroundColor !== 'transparent' && 
-            element.backgroundColor !== 'rgba(0,0,0,0)' &&
-            element.backgroundColor !== '#00000000') {
-            ctx.fillStyle = element.backgroundColor;
+        // Only draw background if it's a real non-black, non-transparent color
+        // Black (#000000) is the canvas default and causes black border artifacts
+        var bg = element.backgroundColor || '';
+        var isRealBg = bg && bg !== 'transparent' && bg !== 'rgba(0,0,0,0)' &&
+                       bg !== '#00000000' && bg.toLowerCase() !== '#000000' &&
+                       bg.toLowerCase() !== '#000' && bg !== 'rgb(0,0,0)';
+        if (isRealBg) {
+            ctx.fillStyle = bg;
             ctx.fillRect(0, 0, element.width, element.height);
-            console.log('[CanvasSlideshow] 🎨 Background:', element.backgroundColor);
-        } else {
-            console.log('[CanvasSlideshow] ⚪ No background (transparent)');
         }
         
-        // Calculate image position and size
+        // Calculate image draw dimensions
         var fit = element.objectFit || 'cover';
         var imgRatio = img.width / img.height;
         var boxRatio = element.width / element.height;
@@ -174,7 +183,6 @@ var CanvasSlideshow = (function() {
         var drawWidth, drawHeight, offsetX, offsetY;
         
         if (fit === 'cover') {
-            // Fill entire container
             if (imgRatio > boxRatio) {
                 drawHeight = element.height;
                 drawWidth = element.height * imgRatio;
@@ -187,7 +195,6 @@ var CanvasSlideshow = (function() {
                 offsetY = (element.height - drawHeight) / 2;
             }
         } else if (fit === 'contain') {
-            // Show entire image
             if (imgRatio > boxRatio) {
                 drawWidth = element.width;
                 drawHeight = element.width / imgRatio;
@@ -200,17 +207,23 @@ var CanvasSlideshow = (function() {
                 offsetY = 0;
             }
         } else {
-            // Stretch
+            // Stretch / fill
             drawWidth = element.width;
             drawHeight = element.height;
             offsetX = 0;
             offsetY = 0;
         }
+
+        // Use floor/ceil to close any sub-pixel gaps that appear as black lines
+        offsetX  = Math.floor(offsetX);
+        offsetY  = Math.floor(offsetY);
+        drawWidth  = Math.ceil(drawWidth  + (offsetX < 0 ? 0 : 0));
+        drawHeight = Math.ceil(drawHeight + (offsetY < 0 ? 0 : 0));
+
+        console.log('[CanvasSlideshow] 📐 Draw:', drawWidth + 'x' + drawHeight,
+                   'at', offsetX + ',' + offsetY);
         
-        console.log('[CanvasSlideshow] 📐 Draw:', Math.round(drawWidth) + 'x' + Math.round(drawHeight), 
-                   'at', Math.round(offsetX) + ',' + Math.round(offsetY));
-        
-        // 🔥 DRAW THE IMAGE
+        // Draw the image
         ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
         console.log('[CanvasSlideshow] ✅ IMAGE DRAWN!');
         
@@ -272,18 +285,11 @@ var CanvasSlideshow = (function() {
         
         if (usingScaler) {
             // CanvasScaler mode
-            var padding = 5;
-            ctx.clearRect(
-                (element.x || 0) - padding,
-                (element.y || 0) - padding,
-                element.width + (padding * 2),
-                element.height + (padding * 2)
-            );
+            // Repaint the canvas background color/image behind the slideshow area
+            // (clearRect alone leaves transparent-black which shows as a black frame)
+            _repaintBehindElement(ctx, element);
             
-            // Redraw background portion
-            redrawBackground(ctx, element);
-            
-            // Render slideshow
+            // Render slideshow on top
             var currentIndex = element.currentSlide || 0;
             var currentSlide = element.slides[currentIndex];
             renderSlideSimple(ctx, element, currentSlide, currentIndex);
@@ -337,25 +343,79 @@ var CanvasSlideshow = (function() {
 
         ctx.restore();
         console.log('[CanvasSlideshow] ✅ rerenderSlideshow COMPLETE');
+
+        // 🔥 NEW FIX: After the new slide is fully drawn, refresh the canvas
+        // snapshot in CanvasRenderer. This ensures that when updateClocks()
+        // next runs (every second), it restores the NEW slide's pixels beneath
+        // any clock/timer/countdown elements - not the old slide's pixels.
+        // Without this, the clock erase would show stale slide content.
+        setTimeout(function() {
+            if (typeof CanvasRenderer !== 'undefined' && 
+                typeof CanvasRenderer.takeCanvasSnapshot === 'function') {
+                CanvasRenderer.takeCanvasSnapshot();
+                console.log('[CanvasSlideshow] 📸 Canvas snapshot refreshed after slide change');
+            }
+        }, 200); // 200ms allows the async drawImageSimple paint to complete first
     }
 
     /**
-     * Redraw background behind slideshow
+     * Repaint the canvas background (color or image) behind a slideshow element.
+     * This avoids the black-border/flash that clearRect causes.
      */
-    function redrawBackground(ctx, element) {
+    function _repaintBehindElement(ctx, element) {
         try {
             var templateData = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
             if (!templateData || !templateData.canvas) return;
 
             var canvasConfig = templateData.canvas;
-            
-            if (canvasConfig.background && canvasConfig.background !== 'transparent') {
-                ctx.fillStyle = canvasConfig.background;
-                ctx.fillRect(element.x, element.y, element.width, element.height);
+            var bgType = canvasConfig.backgroundType || 'color';
+            var x = element.x || 0;
+            var y = element.y || 0;
+            var w = element.width;
+            var h = element.height;
+
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+
+            if (bgType === 'image' && CanvasRenderer && CanvasRenderer._cachedBgImage) {
+                // Clip to slideshow area and repaint the bg image portion
+                ctx.beginPath();
+                ctx.rect(x, y, w, h);
+                ctx.clip();
+                var opacity = typeof canvasConfig.backgroundOpacity !== 'undefined'
+                    ? canvasConfig.backgroundOpacity : 1;
+                ctx.globalAlpha = opacity;
+                CanvasBase.drawImageWithFit(
+                    ctx,
+                    CanvasRenderer._cachedBgImage,
+                    0, 0,
+                    canvasConfig.width,
+                    canvasConfig.height,
+                    canvasConfig.backgroundFit || 'cover'
+                );
+            } else if (bgType === 'video') {
+                // Video bg: clear to transparent so video shows through
+                ctx.clearRect(x, y, w, h);
+            } else {
+                // Solid color
+                var bgColor = (canvasConfig.background && canvasConfig.background !== 'transparent')
+                    ? canvasConfig.background : '#000000';
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(x, y, w, h);
             }
+
+            ctx.restore();
         } catch (e) {
-            console.warn('[CanvasSlideshow] Could not redraw background:', e);
+            console.warn('[CanvasSlideshow] Could not repaint background:', e);
         }
+    }
+
+    /**
+     * @deprecated use _repaintBehindElement
+     */
+    function redrawBackground(ctx, element) {
+        _repaintBehindElement(ctx, element);
     }
 
     /**
@@ -470,11 +530,101 @@ var CanvasSlideshow = (function() {
         activeSlideshows = {};
     }
 
+
+    /* ── DOM slideshow overlay for video background mode ────────── */
+    var _domSlideshows = {};  // { elId -> { wrap, img, timer, state } }
+
+    function _renderAsDomSlideshow(element) {
+        if (!element.slides || !element.slides.length) return;
+
+        var elId = String(element.id || element.name || 'ss');
+
+        if (_domSlideshows[elId]) {
+            /* Already running — just ensure it's showing */
+            return;
+        }
+
+        var container = (typeof CanvasVideoBgHelper !== 'undefined')
+            ? CanvasVideoBgHelper.getContainer()
+            : document.getElementById('our-hotel-container') || document.body;
+
+        var x       = Math.floor(element.x      || 0);
+        var y       = Math.floor(element.y      || 0);
+        var w       = Math.ceil(element.width   || 0);
+        var h       = Math.ceil(element.height  || 0);
+        var opacity = typeof element.opacity !== 'undefined' ? element.opacity : 1;
+        var zIndex  = (element.zIndex && element.zIndex !== 'auto') ? element.zIndex : 10;
+        var radius  = element.borderRadius || 0;
+        var fit     = element.objectFit || 'cover';
+
+        var wrap = document.createElement('div');
+        wrap.setAttribute('data-canvas-ss-id', elId);
+        wrap.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none;margin:0;padding:0;';
+        wrap.style.left         = x + 'px';
+        wrap.style.top          = y + 'px';
+        wrap.style.width        = w + 'px';
+        wrap.style.height       = h + 'px';
+        wrap.style.borderRadius = radius + 'px';
+        wrap.style.opacity      = String(opacity);
+        wrap.style.zIndex       = String(zIndex);
+
+        var imgEl = document.createElement('img');
+        imgEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;display:block;margin:0;padding:0;border:none;pointer-events:none;';
+        imgEl.style.objectFit    = fit;
+        imgEl.style.transform       = 'translate3d(0,0,0)';
+        imgEl.style.webkitTransform = 'translate3d(0,0,0)';
+
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        wrap.appendChild(imgEl);
+        container.appendChild(wrap);
+
+        var state = {
+            wrap: wrap,
+            img: imgEl,
+            currentIndex: 0,
+            timer: null
+        };
+        _domSlideshows[elId] = state;
+
+        function showSlide(idx) {
+            if (idx >= element.slides.length) idx = 0;
+            state.currentIndex = idx;
+            var slide = element.slides[idx];
+            var url = slide.content || slide.media_url || slide.thumbnail ||
+                      slide.url || slide.src || slide.image || slide.imageUrl || '';
+            if (url) {
+                imgEl.src = url;
+                console.log('[CanvasSlideshow] DOM slide', idx+1, '/', element.slides.length, url);
+            }
+            if (element.autoPlay !== false) {
+                var dur = (slide.duration || element.duration || element.defaultDuration || 5) * 1000;
+                state.timer = setTimeout(function () {
+                    showSlide(idx + 1);
+                }, dur);
+            }
+        }
+
+        showSlide(0);
+        console.log('[CanvasSlideshow] DOM slideshow created:', elId);
+    }
+
     /**
      * Cleanup
      */
     function cleanup() {
         stopAll();
+        /* Remove DOM slideshow overlays */
+        for (var id in _domSlideshows) {
+            if (_domSlideshows.hasOwnProperty(id)) {
+                var ss = _domSlideshows[id];
+                if (ss.timer) clearTimeout(ss.timer);
+                if (ss.wrap && ss.wrap.parentNode) ss.wrap.parentNode.removeChild(ss.wrap);
+            }
+        }
+        _domSlideshows = {};
     }
 
     // Public API

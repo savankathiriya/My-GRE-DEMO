@@ -15,10 +15,24 @@ var CanvasClock = (function() {
      */
     function render(ctx, el) {
         console.log('[CanvasClock] Rendering:', el.name || el.id, 'DisplayMode:', el.displayMode, 'ClockType:', el.clockType);
-        
+
+        // VIDEO BACKGROUND: render as live DOM overlay above the video layer
+        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+            _renderAsDom(el);
+            return;
+        }
+
         ctx.save();
         
-        // Apply transformations
+        // Reset critical state to prevent contamination from previously rendered elements
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        // Apply transformations (translate to el.x, el.y and set opacity)
         CanvasBase.applyTransformations(ctx, el);
         
         // Draw background
@@ -64,7 +78,7 @@ var CanvasClock = (function() {
         
         ctx.restore();
         
-        console.log('[CanvasClock] âœ… Clock rendered successfully');
+        console.log('[CanvasClock] Ã¢Å“â€¦ Clock rendered successfully');
     }
 
     /**
@@ -84,7 +98,7 @@ var CanvasClock = (function() {
         var seconds = now.getSeconds();
         var milliseconds = now.getMilliseconds();
         
-        console.log('[CanvasClock] â° Analog time:', pad(hours) + ':' + pad(minutes) + ':' + pad(seconds), '@', now.toLocaleTimeString());
+        console.log('[CanvasClock] Ã¢ÂÂ° Analog time:', pad(hours) + ':' + pad(minutes) + ':' + pad(seconds), '@', now.toLocaleTimeString());
         
         // Draw clock face background
         ctx.beginPath();
@@ -119,7 +133,7 @@ var CanvasClock = (function() {
         var minuteAngle = (minutes + seconds / 60) * 6; // 6 degrees per minute
         var secondAngle = (seconds + milliseconds / 1000) * 6; // 6 degrees per second with smooth motion
         
-        console.log('[CanvasClock] Angles - Hour:', hourAngle.toFixed(2) + 'Â°, Min:', minuteAngle.toFixed(2) + 'Â°, Sec:', secondAngle.toFixed(2) + 'Â°');
+        console.log('[CanvasClock] Angles - Hour:', hourAngle.toFixed(2) + 'Ã‚Â°, Min:', minuteAngle.toFixed(2) + 'Ã‚Â°, Sec:', secondAngle.toFixed(2) + 'Ã‚Â°');
         
         // Draw hour hand
         drawHand(ctx, centerX, centerY, 
@@ -282,15 +296,21 @@ var CanvasClock = (function() {
             if (showSeconds) timeString += ':' + pad(seconds);
         }
         
-        // Calculate font size based on element dimensions
+        // Calculate font size - ensure minimum visibility
         var fontSize = el.fontSize || Math.min(el.width / 6, el.height * 0.6);
+        fontSize = Math.max(fontSize, 10);
+        // Ensure clean text rendering state
+        ctx.globalAlpha = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
         ctx.font = (el.fontWeight || 'normal') + ' ' + fontSize + 'px ' + (el.fontFamily || 'Arial');
         ctx.fillStyle = el.color || '#FFFFFF';
-        ctx.textAlign = el.textAlign || 'center';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(timeString, el.width / 2, el.height / 2);
         
-        console.log('[CanvasClock] â° Digital clock updated:', timeString, '@', now.toLocaleTimeString());
+        console.log('[CanvasClock] Ã¢ÂÂ° Digital clock updated:', timeString, '@', now.toLocaleTimeString());
     }
 
     /**
@@ -342,9 +362,14 @@ var CanvasClock = (function() {
         
         // Draw date
         var fontSize = el.fontSize || 36;
+        fontSize = Math.max(fontSize, 10);
+        ctx.globalAlpha = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
         ctx.font = (el.fontWeight || 'normal') + ' ' + fontSize + 'px ' + (el.fontFamily || 'Arial');
         ctx.fillStyle = el.color || '#FFFFFF';
-        ctx.textAlign = el.textAlign || 'center';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(dateString, el.width / 2, el.height / 2);
     }
@@ -390,12 +415,16 @@ var CanvasClock = (function() {
         var timeFontSize = el.timeFontSize || el.fontSize || Math.min(el.width / 5, el.height * 0.5);
         var dateFontSize = el.dateFontSize || timeFontSize * 0.4;
         
-        console.log('[CanvasClock] â° DateTime updated:', timeString, dateString);
+        console.log('[CanvasClock] Ã¢ÂÂ° DateTime updated:', timeString, dateString);
         
         // Draw time (larger, centered vertically with space for date below)
+        ctx.globalAlpha = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
         ctx.font = (el.fontWeight || 'normal') + ' ' + timeFontSize + 'px ' + (el.fontFamily || 'Arial');
         ctx.fillStyle = el.color || '#FFFFFF';
-        ctx.textAlign = el.textAlign || 'center';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
         var timeY = el.height / 2 - dateFontSize / 2 - 5;
@@ -424,7 +453,7 @@ var CanvasClock = (function() {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('No target date set', el.width / 2, el.height / 2);
-            console.warn('[CanvasClock] âš ï¸ No targetDateTime set for countdown');
+            console.warn('[CanvasClock] Ã¢Å¡ Ã¯Â¸Â No targetDateTime set for countdown');
             return;
         }
         
@@ -433,17 +462,22 @@ var CanvasClock = (function() {
         var target = new Date(el.targetDateTime);
         var diff = target - now; // Milliseconds remaining
         
-        console.log('[CanvasClock] â±ï¸ Countdown - Now:', now.toLocaleTimeString(), 'Target:', target.toLocaleString(), 'Diff:', Math.floor(diff / 1000) + 's');
+        console.log('[CanvasClock] Ã¢ÂÂ±Ã¯Â¸Â Countdown - Now:', now.toLocaleTimeString(), 'Target:', target.toLocaleString(), 'Diff:', Math.floor(diff / 1000) + 's');
         
         // Check if countdown is complete
         if (diff <= 0) {
             // COUNTDOWN COMPLETE - Show completion message
-            console.log('[CanvasClock] ðŸŽ‰ COUNTDOWN COMPLETE! Showing message:', el.countdownCompleteMessage || "Time's Up!");
+            console.log('[CanvasClock] Ã°Å¸Å½â€° COUNTDOWN COMPLETE! Showing message:', el.countdownCompleteMessage || "Time's Up!");
             
             var fontSize = el.timeFontSize || el.fontSize || Math.min(el.width / 8, el.height * 0.6);
+            fontSize = Math.max(fontSize, 10);
+            ctx.globalAlpha = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
             ctx.font = (el.fontWeight || 'normal') + ' ' + fontSize + 'px ' + (el.fontFamily || 'Arial');
             ctx.fillStyle = el.color || '#FF0000';
-            ctx.textAlign = el.textAlign || 'center';
+            ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(el.countdownCompleteMessage || "Time's Up!", el.width / 2, el.height / 2);
             return;
@@ -460,13 +494,18 @@ var CanvasClock = (function() {
         // 2:02:21:28 -> 2:02:21:27 -> 2:02:21:26 -> ... -> 0:00:00:01 -> 0:00:00:00 -> "Time's Up!"
         var countdownText = days + ':' + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
         
-        console.log('[CanvasClock] â±ï¸ Countdown remaining:', countdownText);
+        console.log('[CanvasClock] Ã¢ÂÂ±Ã¯Â¸Â Countdown remaining:', countdownText);
         
         // Calculate font size based on element dimensions
         var fontSize = el.timeFontSize || el.fontSize || Math.min(el.width / 8, el.height * 0.6);
+        fontSize = Math.max(fontSize, 10);
+        ctx.globalAlpha = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
         ctx.font = (el.fontWeight || 'normal') + ' ' + fontSize + 'px ' + (el.fontFamily || 'Arial');
         ctx.fillStyle = el.timeColor || el.color || '#FFFFFF';
-        ctx.textAlign = el.textAlign || 'center';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(countdownText, el.width / 2, el.height / 2);
         
@@ -493,8 +532,142 @@ var CanvasClock = (function() {
         return num < 10 ? '0' + num : num;
     }
 
+
+    /* ── DOM clock overlay for video background mode ───────────── */
+    var _clockDomOverlays = {};   // { elId -> { wrap, span, timer } }
+
+    function _getClockText(el) {
+        var now  = new Date();
+        var h    = now.getHours();
+        var m    = now.getMinutes();
+        var s    = now.getSeconds();
+        var displayMode = (el.displayMode || '').toLowerCase();
+
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+
+        if (displayMode === 'date') {
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+        }
+        if (displayMode === 'datetime') {
+            var months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var dateStr = now.getDate() + ' ' + months2[now.getMonth()] + ' ' + now.getFullYear();
+            var tf = el.timeFormat || 'HH:mm';
+            var ampm = '';
+            if (tf === '12' || tf.indexOf('hh') !== -1) {
+                ampm = h >= 12 ? ' PM' : ' AM';
+                h = h % 12 || 12;
+            }
+            var timeStr = pad(h) + ':' + pad(m) + (el.showSeconds !== false ? ':' + pad(s) : '') + ampm;
+            return dateStr + '  ' + timeStr;
+        }
+        if (displayMode === 'countdown') {
+            var target = el.targetDate ? new Date(el.targetDate) : new Date();
+            var diff   = Math.max(0, target - now);
+            var days   = Math.floor(diff / 86400000);
+            var hrs    = Math.floor((diff % 86400000) / 3600000);
+            var mins   = Math.floor((diff % 3600000)  / 60000);
+            var secs   = Math.floor((diff % 60000)    / 1000);
+            return (days > 0 ? days + 'd ' : '') + pad(hrs) + ':' + pad(mins) + ':' + pad(secs);
+        }
+        // Default: digital clock (HH:mm or HH:mm:ss)
+        var tf2  = el.timeFormat || 'HH:mm:ss';
+        var ampm2 = '';
+        if (tf2 === '12' || tf2.indexOf('hh') !== -1) {
+            ampm2 = h >= 12 ? ' PM' : ' AM';
+            h = h % 12 || 12;
+        }
+        return pad(h) + ':' + pad(m) + (el.showSeconds !== false ? ':' + pad(s) : '') + ampm2;
+    }
+
+    function _renderAsDom(el) {
+        var elId = String(el.id || el.name || 'clock');
+
+        /* If overlay exists just update the text */
+        if (_clockDomOverlays[elId]) {
+            _clockDomOverlays[elId].span.textContent = _getClockText(el);
+            return;
+        }
+
+        var container = (typeof CanvasVideoBgHelper !== 'undefined')
+            ? CanvasVideoBgHelper.getContainer()
+            : document.getElementById('our-hotel-container') || document.body;
+
+        var x       = Math.floor(el.x      || 0);
+        var y       = Math.floor(el.y      || 0);
+        var w       = Math.ceil(el.width   || 200);
+        var h       = Math.ceil(el.height  || 60);
+        var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
+        var fontSize = el.fontSize || Math.min(w / 6, h * 0.6);
+        fontSize = Math.max(fontSize, 10);
+
+        var wrap = document.createElement('div');
+        wrap.setAttribute('data-canvas-clock-id', elId);
+        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;display:flex;align-items:center;justify-content:center;';
+        wrap.style.left         = x + 'px';
+        wrap.style.top          = y + 'px';
+        wrap.style.width        = w + 'px';
+        wrap.style.height       = h + 'px';
+        wrap.style.opacity      = String(opacity);
+        wrap.style.zIndex       = String(zIndex);
+        wrap.style.borderRadius = (el.borderRadius || 0) + 'px';
+
+        if (el.enableBackground && el.backgroundColor && el.backgroundColor !== 'transparent') {
+            wrap.style.backgroundColor = el.backgroundColor;
+        }
+
+        if (el.rotation && el.rotation !== 0) {
+            wrap.style.transform       = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.webkitTransform = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.transformOrigin = 'center center';
+        }
+
+        var span = document.createElement('span');
+        span.textContent   = _getClockText(el);
+        span.style.cssText = 'display:block;margin:0;padding:0;white-space:nowrap;';
+        span.style.fontSize   = fontSize + 'px';
+        span.style.fontFamily = el.fontFamily || 'Arial';
+        span.style.fontWeight = el.fontWeight || 'normal';
+        span.style.color      = el.color || '#ffffff';
+        span.style.textAlign  = 'center';
+        span.style.lineHeight = '1';
+
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        wrap.appendChild(span);
+        container.appendChild(wrap);
+
+        /* Live-update ticker (every second) */
+        var timer = setInterval(function () {
+            if (!wrap.parentNode) {
+                clearInterval(timer);
+                delete _clockDomOverlays[elId];
+                return;
+            }
+            span.textContent = _getClockText(el);
+        }, 1000);
+
+        _clockDomOverlays[elId] = { wrap: wrap, span: span, timer: timer };
+        console.log('[CanvasClock] DOM clock overlay created:', elId);
+    }
+
+    function cleanup() {
+        for (var id in _clockDomOverlays) {
+            if (_clockDomOverlays.hasOwnProperty(id)) {
+                var entry = _clockDomOverlays[id];
+                clearInterval(entry.timer);
+                if (entry.wrap && entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap);
+            }
+        }
+        _clockDomOverlays = {};
+    }
+
     // Public API
     return {
-        render: render
+        render: render,
+        cleanup: cleanup
     };
 })();

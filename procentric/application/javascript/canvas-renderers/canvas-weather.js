@@ -436,12 +436,151 @@ var CanvasWeather = (function() {
         ctx.restore();
     }
 
+    /* ── DOM overlay for video background mode ─────────────────── */
+    var _weatherDomOverlays = [];
+
+    function _isVideoBg() {
+        try {
+            var tj = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            return !!(tj && tj.canvas && tj.canvas.backgroundType === 'video');
+        } catch (e) { return false; }
+    }
+
+    function _renderWeatherAsDom(el) {
+        if (!el.weatherData) return;
+        var data = el.weatherData;
+
+        var canvas = document.getElementById('templateCanvas');
+        if (!canvas) return;
+        var container = canvas.parentElement;
+        if (!container) return;
+
+        var elId = String(el.id || el.name || 'weather');
+        // Remove stale overlay
+        var stale = document.querySelectorAll('[data-canvas-weather-id="' + elId + '"]');
+        for (var s = 0; s < stale.length; s++) {
+            if (stale[s].parentNode) stale[s].parentNode.removeChild(stale[s]);
+        }
+
+        var x       = Math.floor(el.x      || 0);
+        var y       = Math.floor(el.y      || 0);
+        var w       = Math.ceil(el.width   || 200);
+        var h       = Math.ceil(el.height  || 100);
+        var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+        var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
+        var padding = el.backgroundPadding || 10;
+        var baseFontSize = el.fontSize || 40;
+
+        var wrap = document.createElement('div');
+        wrap.setAttribute('data-canvas-weather-id', elId);
+        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;';
+        wrap.style.left         = x + 'px';
+        wrap.style.top          = y + 'px';
+        wrap.style.width        = w + 'px';
+        wrap.style.height       = h + 'px';
+        wrap.style.opacity      = String(opacity);
+        wrap.style.zIndex       = String(zIndex);
+        wrap.style.padding      = padding + 'px';
+        wrap.style.borderRadius = (el.backgroundRadius || 0) + 'px';
+        wrap.style.fontFamily   = el.textFont || 'Arial';
+        wrap.style.color        = el.textColor || el.color || '#ffffff';
+
+        if (el.backgroundColor && el.backgroundColor !== 'transparent' &&
+            !el.backgroundColor.endsWith('00')) {
+            wrap.style.backgroundColor = el.backgroundColor;
+        }
+
+        if (el.rotation && el.rotation !== 0) {
+            wrap.style.transform       = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.webkitTransform = 'rotate(' + el.rotation + 'deg)';
+            wrap.style.transformOrigin = 'center center';
+        }
+
+        /* Build HTML weather content */
+        var html = '';
+        var fw = el.textBold ? 'bold' : 'normal';
+
+        var tempValue = data.temperature
+            ? (el.unit === 'fahrenheit' ? data.temperature.fahrenheit : data.temperature.celsius)
+            : '--';
+
+        /* Title / location */
+        if (el.showTitle && (el.titleLabel || data.location)) {
+            var titleText = el.titleLabel || data.location || 'Location';
+            var tfs = el.titleFontSize || 20;
+            html += '<div style="font-size:' + tfs + 'px;font-weight:' + (el.titleBold ? 'bold' : 'normal') +
+                    ';color:' + (el.titleColor || '#ffffff') + ';margin-bottom:8px;white-space:nowrap;">&#128205; ' +
+                    _escapeHtml(titleText) + '</div>';
+        }
+
+        /* Temperature */
+        html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                ';white-space:nowrap;margin-bottom:6px;">&#127777; ' + tempValue + '&deg;C</div>';
+
+        /* Conditions */
+        if (el.showConditions && data.conditions) {
+            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';white-space:nowrap;margin-bottom:6px;">&#9925; ' + _escapeHtml(data.conditions) + '</div>';
+        }
+
+        /* Humidity */
+        if (el.showHumidity && typeof data.humidity !== 'undefined') {
+            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';white-space:nowrap;margin-bottom:6px;">&#128167; Humidity: ' + data.humidity + '%</div>';
+        }
+
+        /* Wind */
+        if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
+            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';white-space:nowrap;margin-bottom:6px;">&#128168; Wind: ' + data.windSpeed + ' km/h</div>';
+        }
+
+        /* Visibility */
+        if (el.showVisibility && typeof data.visibility !== 'undefined') {
+            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';white-space:nowrap;">&#128065; Visibility: ' + data.visibility + ' km</div>';
+        }
+
+        /* Compact (no detailed flags) */
+        if (!el.showConditions && !el.showHumidity && !el.showWindSpeed && !el.showVisibility) {
+            /* already rendered temp above */
+        }
+
+        wrap.innerHTML = html;
+
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        container.appendChild(wrap);
+        _weatherDomOverlays.push(wrap);
+        console.log('[CanvasWeather] DOM overlay created:', elId);
+    }
+
+    function _escapeHtml(t) {
+        return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function cleanupWeather() {
+        for (var i = 0; i < _weatherDomOverlays.length; i++) {
+            if (_weatherDomOverlays[i] && _weatherDomOverlays[i].parentNode)
+                _weatherDomOverlays[i].parentNode.removeChild(_weatherDomOverlays[i]);
+        }
+        _weatherDomOverlays = [];
+    }
+
     function render(ctx, el) {
         if (!el.weatherData) {
             console.warn('[CanvasWeather] No weather data available');
             return;
         }
-        
+
+        // VIDEO BACKGROUND: use DOM overlay
+        if (_isVideoBg()) {
+            _renderWeatherAsDom(el);
+            return;
+        }
+
         ctx.save();
         CanvasBase.applyTransformations(ctx, el);
         
@@ -602,5 +741,5 @@ var CanvasWeather = (function() {
         ctx.fillText(tempText, iconX + iconSize + 15, centerY);
     }
 
-    return { render: render };
+    return { render: render, cleanup: cleanupWeather };
 })();

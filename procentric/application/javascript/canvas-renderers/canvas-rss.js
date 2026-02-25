@@ -13,6 +13,13 @@ var CanvasRss = (function() {
     var rssFeedCache = {}; // Cache feed data
     var fetchingFeeds = {}; // Track ongoing fetches
     
+    function _isVideoBg() {
+        try {
+            var tj = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            return !!(tj && tj.canvas && tj.canvas.backgroundType === 'video');
+        } catch (e) { return false; }
+    }
+
     function render(ctx, el, canvas) {
         if (!el.feedUrl) {
             console.warn('[CanvasRss] RSS element missing feedUrl:', el.name || el.id);
@@ -20,17 +27,18 @@ var CanvasRss = (function() {
         }
         
         console.log('[CanvasRss] Rendering RSS feed:', el.name || el.id, el.feedUrl);
-        
-        ctx.save();
-        CanvasBase.applyTransformations(ctx, el);
-        
-        // Draw background placeholder on canvas
-        if (el.backgroundColor && el.backgroundColor !== 'transparent') {
-            ctx.fillStyle = el.backgroundColor;
-            ctx.fillRect(0, 0, el.width, el.height);
+
+        // VIDEO BACKGROUND: skip canvas placeholder draw entirely — it would block the video.
+        // The DOM overlay (createRssOverlay) handles all visual rendering.
+        if (!_isVideoBg()) {
+            ctx.save();
+            CanvasBase.applyTransformations(ctx, el);
+            if (el.backgroundColor && el.backgroundColor !== 'transparent') {
+                ctx.fillStyle = el.backgroundColor;
+                ctx.fillRect(0, 0, el.width, el.height);
+            }
+            ctx.restore();
         }
-        
-        ctx.restore();
         
         // Create or update HTML overlay for RSS content
         createRssOverlay(el, canvas);
@@ -69,12 +77,21 @@ var CanvasRss = (function() {
         container.appendChild(overlay);
         rssOverlays[elementId] = overlay;
         
-        // Calculate position
-        var canvasRect = canvas.getBoundingClientRect();
-        var scaleX = canvasRect.width / canvas.width;
-        var scaleY = canvasRect.height / canvas.height;
-        
-        // Style the overlay
+        // Calculate position.
+        // el.x/y/width/height are already in screen pixels (CanvasScaler has run).
+        // The canvas is position:absolute inside the container, so canvas pixels
+        // map 1:1 to container-relative pixels — no scale factor needed.
+        var scaleX = 1, scaleY = 1;
+        try {
+            var canvasRect = canvas.getBoundingClientRect();
+            // Only apply scale if canvas CSS size differs from its pixel size
+            // (e.g. legacy non-CanvasScaler path)
+            if (Math.abs(canvasRect.width - canvas.width) > 2) {
+                scaleX = canvasRect.width  / canvas.width;
+                scaleY = canvasRect.height / canvas.height;
+            }
+        } catch (e) { /* use 1:1 */ }
+
         overlay.style.position = 'absolute';
         overlay.style.left = (el.x * scaleX) + 'px';
         overlay.style.top = (el.y * scaleY) + 'px';

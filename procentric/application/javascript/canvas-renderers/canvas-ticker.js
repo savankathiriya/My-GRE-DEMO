@@ -13,6 +13,13 @@ var CanvasTicker = (function() {
     var tickerOverlays = {}; // Store ticker overlay elements
     var tickerAnimationIds = {}; // Store animation style IDs
     
+    function _isVideoBg() {
+        try {
+            var tj = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            return !!(tj && tj.canvas && tj.canvas.backgroundType === 'video');
+        } catch (e) { return false; }
+    }
+
     function render(ctx, el, canvas) {
         if (!el.items || el.items.length === 0) {
             console.warn('[CanvasTicker] Ticker element missing items:', el.name || el.id);
@@ -20,33 +27,35 @@ var CanvasTicker = (function() {
         }
         
         console.log('[CanvasTicker] Rendering ticker:', el.name || el.id, 'Speed:', el.speed);
-        
-        ctx.save();
-        CanvasBase.applyTransformations(ctx, el);
-        
-        // Draw background placeholder
-        var bgType = el.backgroundType || 'color';
-        if (bgType === 'color' && el.backgroundColor && el.backgroundColor !== 'transparent') {
-            var bgOpacity = typeof el.backgroundOpacity !== 'undefined' ? el.backgroundOpacity : 1;
-            ctx.globalAlpha = bgOpacity;
-            ctx.fillStyle = el.backgroundColor;
-            ctx.fillRect(0, 0, el.width, el.height);
-            ctx.globalAlpha = 1;
-        }
-        
-        // Draw border if enabled
-        if (el.showBorder) {
-            ctx.strokeStyle = el.borderColor || '#cccccc';
-            ctx.lineWidth = el.borderWidth || 1;
-            if (el.borderRadius > 0) {
-                CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
-                ctx.stroke();
-            } else {
-                ctx.strokeRect(0, 0, el.width, el.height);
+
+        // VIDEO BACKGROUND: skip all canvas draws — they block the video.
+        // The DOM overlay handles all visual rendering.
+        if (!_isVideoBg()) {
+            ctx.save();
+            CanvasBase.applyTransformations(ctx, el);
+            
+            var bgType = el.backgroundType || 'color';
+            if (bgType === 'color' && el.backgroundColor && el.backgroundColor !== 'transparent') {
+                var bgOpacity = typeof el.backgroundOpacity !== 'undefined' ? el.backgroundOpacity : 1;
+                ctx.globalAlpha = bgOpacity;
+                ctx.fillStyle = el.backgroundColor;
+                ctx.fillRect(0, 0, el.width, el.height);
+                ctx.globalAlpha = 1;
             }
+            
+            if (el.showBorder) {
+                ctx.strokeStyle = el.borderColor || '#cccccc';
+                ctx.lineWidth = el.borderWidth || 1;
+                if (el.borderRadius > 0) {
+                    CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
+                    ctx.stroke();
+                } else {
+                    ctx.strokeRect(0, 0, el.width, el.height);
+                }
+            }
+
+            ctx.restore();
         }
-        
-        ctx.restore();
         
         // Create HTML overlay for ticker animation
         createTickerOverlay(el, canvas);
@@ -93,12 +102,17 @@ var CanvasTicker = (function() {
         container.appendChild(overlay);
         tickerOverlays[elementId] = overlay;
         
-        // Calculate position
-        var canvasRect = canvas.getBoundingClientRect();
-        var scaleX = canvasRect.width / canvas.width;
-        var scaleY = canvasRect.height / canvas.height;
-        
-        // Style the overlay container
+        // el.x/y/width/height are already screen pixels when CanvasScaler is used.
+        // Only apply a scale when canvas CSS size differs from its pixel buffer size.
+        var scaleX = 1, scaleY = 1;
+        try {
+            var canvasRect = canvas.getBoundingClientRect();
+            if (Math.abs(canvasRect.width - canvas.width) > 2) {
+                scaleX = canvasRect.width  / canvas.width;
+                scaleY = canvasRect.height / canvas.height;
+            }
+        } catch (e) { /* use 1:1 */ }
+
         overlay.style.position = 'absolute';
         overlay.style.left = (el.x * scaleX) + 'px';
         overlay.style.top = (el.y * scaleY) + 'px';

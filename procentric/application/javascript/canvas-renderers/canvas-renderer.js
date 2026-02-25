@@ -16,6 +16,9 @@ var CanvasRenderer = (function() {
     var scaleY = 1;
     var clockElements = [];
     var animationFrameId = null;
+    var cachedBgImage = null;   // cached bg image for clock/slideshow repaints
+    var cachedBgFit = 'cover';
+    var cachedBgOpacity = 1;
 
     /**
      * Main render function - orchestrates all rendering
@@ -41,6 +44,18 @@ var CanvasRenderer = (function() {
         if (typeof CanvasGif !== 'undefined' && CanvasGif.cleanup) {
             CanvasGif.cleanup();
         }
+        if (typeof CanvasImage !== 'undefined' && CanvasImage.cleanup) {
+            CanvasImage.cleanup();
+        }
+        if (typeof CanvasText !== 'undefined' && CanvasText.cleanup) {
+            CanvasText.cleanup();
+        }
+        if (typeof CanvasClock !== 'undefined' && CanvasClock.cleanup) {
+            CanvasClock.cleanup();
+        }
+        if (typeof CanvasShapes !== 'undefined' && CanvasShapes.cleanup) {
+            CanvasShapes.cleanup();
+        }
         if (typeof CanvasSlideshow !== 'undefined' && CanvasSlideshow.cleanup) {
             CanvasSlideshow.cleanup();
         }
@@ -59,7 +74,7 @@ var CanvasRenderer = (function() {
             return;
         }
 
-        // 🔥 PROPER FIX: Use exact window dimensions, let CanvasScaler handle everything
+        // ðŸ”¥ PROPER FIX: Use exact window dimensions, let CanvasScaler handle everything
         var screenW = window.innerWidth;
         var screenH = window.innerHeight;
         var designW = originalTemplateData.canvas.width  || 1920;
@@ -76,10 +91,10 @@ var CanvasRenderer = (function() {
             templateData = CanvasScaler.scaleTemplateData(originalTemplateData);
             
             var scaleInfo = CanvasScaler.getScaleInfo();
-            console.log('[CanvasRenderer] ✅ CanvasScaler - Scale:', scaleInfo.scaleX.toFixed(4), 'x', scaleInfo.scaleY.toFixed(4));
+            console.log('[CanvasRenderer] âœ… CanvasScaler - Scale:', scaleInfo.scaleX.toFixed(4), 'x', scaleInfo.scaleY.toFixed(4));
         } else {
             // Fallback to old method if CanvasScaler not loaded
-            console.warn('[CanvasRenderer] ⚠️ CanvasScaler not found, using legacy scaling');
+            console.warn('[CanvasRenderer] âš ï¸ CanvasScaler not found, using legacy scaling');
             templateData = originalTemplateData;
             
             scaleX = screenW / designW;
@@ -97,11 +112,33 @@ var CanvasRenderer = (function() {
         canvas.height = screenH;
         canvas.style.width  = screenW + 'px';
         canvas.style.height = screenH + 'px';
-        canvas.style.position = 'fixed';
+        // IMPORTANT: keep position:absolute (NOT fixed) so canvas stays inside
+        // #our-hotel-container stacking context. If we set fixed the canvas
+        // escapes the container and sits above all DOM overlays (GIFs, action images).
+        canvas.style.position = 'absolute';
         canvas.style.top = '0px';
         canvas.style.left = '0px';
         canvas.style.margin = '0';
         canvas.style.padding = '0';
+
+        // VIDEO BACKGROUND: make canvas transparent so bg-video-wrap shows through.
+        // Layer order inside #our-hotel-container (bottom -> top):
+        //   z-index:1  bg-video-wrap (background video DOM div)
+        //   z-index:2  templateCanvas (transparent canvas - elements drawn here)
+        //   z-index:10+ GIF overlays, action image overlays (above canvas)
+        //   z-index:1000 focus overlays
+        if (bgType === 'video') {
+            canvas.style.background = 'transparent';
+            canvas.style.zIndex = '2';
+            document.body.style.background = 'none';
+            var _videoCont = document.getElementById('our-hotel-container');
+            if (_videoCont) _videoCont.style.background = 'none';
+            ctx.clearRect(0, 0, screenW, screenH);
+            console.log('[CanvasRenderer] Video BG: canvas transparent z-index:2');
+        } else {
+            canvas.style.background = '';
+            canvas.style.zIndex = '';
+        }
 
         // Reset transform - NO OFFSET, NO EXTRA TRANSLATION
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -126,6 +163,11 @@ var CanvasRenderer = (function() {
         });
 
         console.log('[CanvasRenderer] Found', clockElements.length, 'clock elements for live updates');
+
+        // Reset cached background on each full render
+        cachedBgImage = null;
+        cachedBgFit = canvasConfig.backgroundFit || 'cover';
+        cachedBgOpacity = typeof canvasConfig.backgroundOpacity !== 'undefined' ? canvasConfig.backgroundOpacity : 1;
 
         // Check if background is an image
         var bgType = canvasConfig.backgroundType || 'color';
@@ -174,22 +216,27 @@ var CanvasRenderer = (function() {
         bgImg.crossOrigin = 'anonymous';
         
         bgImg.onload = function() {
-            console.log('[CanvasRenderer] ✅ Background image loaded, rendering...');
+            console.log('[CanvasRenderer] âœ… Background image loaded, rendering...');
             
+            // Cache for clock/slideshow repaints
+            cachedBgImage = bgImg;
+            cachedBgFit   = fit;
+            cachedBgOpacity = opacity;
+
             // Draw background image
             ctx.save();
             ctx.globalAlpha = opacity;
             CanvasBase.drawImageWithFit(ctx, bgImg, 0, 0, width, height, fit);
             ctx.restore();
             
-            console.log('[CanvasRenderer] ✅ Background rendered, now rendering elements...');
+            console.log('[CanvasRenderer] âœ… Background rendered, now rendering elements...');
             
             // NOW render all elements on top of the background
             renderAllElements(ctx, sortedElements, canvas);
         };
         
         bgImg.onerror = function() {
-            console.warn('[CanvasRenderer] ❌ Background image failed to load, rendering elements anyway');
+            console.warn('[CanvasRenderer] âŒ Background image failed to load, rendering elements anyway');
             // Still render elements even if background fails
             renderAllElements(ctx, sortedElements, canvas);
         };
@@ -219,9 +266,9 @@ var CanvasRenderer = (function() {
             }
         }
         
-        console.log('[CanvasRenderer] ✅ All elements rendered');
+        console.log('[CanvasRenderer] âœ… All elements rendered');
 
-        // 🔥 APPLY ANIMATIONS AFTER ALL ELEMENTS ARE RENDERED
+        // ðŸ”¥ APPLY ANIMATIONS AFTER ALL ELEMENTS ARE RENDERED
         setTimeout(function() {
             if (typeof CanvasAnimation !== 'undefined') {
                 console.log('[CanvasRenderer] Applying animations to elements');
@@ -340,17 +387,29 @@ var CanvasRenderer = (function() {
     }
 
     /**
-     * 🔥 UPDATE ONLY CLOCK ELEMENTS (SELECTIVE RENDERING)
+     * UPDATE ONLY CLOCK ELEMENTS (SELECTIVE RENDERING)
+     *
+     * ERASE STRATEGY per clock region (in priority order):
+     *  1. Restore canvas-level background (color or canvas image bg).
+     *  2. For every non-clock element overlapping this clock region:
+     *     - image-type: repaint synchronously using el._loadedImg or
+     *       CanvasBase.getCachedImage(src) — no async, no timers needed.
+     *     - other types: re-render clipped to the clock rect.
+     *  3. Two-pass design prevents adjacent clocks clobbering each other.
      */
     function updateClocks() {
         if (!ctx || !currentCanvas || clockElements.length === 0) {
             return;
         }
+        // VIDEO BG: clocks are live DOM overlays (CanvasClock._renderAsDom with setInterval)
+        // No canvas repaint needed - just return
+        var _bgTypeCk = templateData && templateData.canvas && templateData.canvas.backgroundType;
+        if (_bgTypeCk === 'video') {
+            return;
+        }
 
-        // Save the current canvas state
         ctx.save();
-        
-        // Re-apply scaling if using legacy mode
+
         if (typeof CanvasScaler === 'undefined') {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.scale(scaleX, scaleY);
@@ -358,21 +417,128 @@ var CanvasRenderer = (function() {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
 
-        // Update each clock element
+        var _canvasCfg = templateData && templateData.canvas;
+        var _bgType  = (_canvasCfg && _canvasCfg.backgroundType) ? _canvasCfg.backgroundType : 'color';
+        var _bgColor = (_canvasCfg && _canvasCfg.background)     ? _canvasCfg.background     : '#000000';
+
+        // All non-clock elements sorted by zIndex — used to find underlays
+        var allElements = (templateData && templateData.elements) ? templateData.elements : [];
+        var underlayElements = allElements.slice().sort(function(a, b) {
+            return ((a.zIndex || 0) - (b.zIndex || 0));
+        }).filter(function(e) {
+            if (e.visible === false) return false;
+            var t = (e.type || '').toLowerCase();
+            return t !== 'clock' && t !== 'timer' && t !== 'countdown';
+        });
+
+        // Axis-aligned rectangle overlap test
+        function overlaps(ax, ay, aw, ah, bx, by, bw, bh) {
+            return ax < bx + bw && ax + aw > bx &&
+                   ay < by + bh && ay + ah > by;
+        }
+
+        // Synchronously draw one image element, clipped to the given rect.
+        // Uses el._loadedImg (set by CanvasImage after load) or the global
+        // CanvasBase image cache — no async callback needed.
+        function drawImageElement(under, clipX, clipY, clipW, clipH) {
+            var img = under._loadedImg ||
+                      (under.src ? CanvasBase.getCachedImage(under.src) : null);
+            if (!img) return false;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(clipX, clipY, clipW, clipH);
+            ctx.clip();
+
+            ctx.translate(under.x || 0, under.y || 0);
+            if (under.rotation) {
+                ctx.translate(under.width / 2, under.height / 2);
+                ctx.rotate(under.rotation * Math.PI / 180);
+                ctx.translate(-under.width / 2, -under.height / 2);
+            }
+            ctx.globalAlpha = typeof under.opacity !== 'undefined' ? under.opacity : 1;
+            if ((under.borderRadius || 0) > 0) {
+                CanvasBase.roundRect(ctx, 0, 0, under.width, under.height, under.borderRadius);
+                ctx.clip();
+            }
+            CanvasBase.drawImageWithFit(
+                ctx, img, 0, 0, under.width, under.height,
+                under.objectFit || 'contain'
+            );
+            ctx.restore();
+            return true;
+        }
+
+        // Reset composite state
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur  = 0;
+
+        // ── PASS 1: Erase / restore each clock region ────────────────────
         for (var i = 0; i < clockElements.length; i++) {
-            var el = clockElements[i];
-            
-            // Clear only the clock area (with some padding for smooth edges)
-            var padding = 5;
-            var clearX = (el.x || 0) - padding;
-            var clearY = (el.y || 0) - padding;
-            var clearW = el.width + (padding * 2);
-            var clearH = el.height + (padding * 2);
-            
-            ctx.clearRect(clearX, clearY, clearW, clearH);
-            
-            // Re-render just this clock element
-            CanvasClock.render(ctx, el);
+            var el  = clockElements[i];
+            var pad = 2;
+            var cx  = (el.x || 0) - pad;
+            var cy  = (el.y || 0) - pad;
+            var cw  = el.width  + pad * 2;
+            var ch  = el.height + pad * 2;
+
+            // Step 1 — restore canvas-level background
+            if (_bgType === 'image' && cachedBgImage) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(cx, cy, cw, ch);
+                ctx.clip();
+                ctx.globalAlpha = cachedBgOpacity;
+                CanvasBase.drawImageWithFit(ctx, cachedBgImage, 0, 0,
+                    _canvasCfg.width, _canvasCfg.height, cachedBgFit);
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            } else if (_bgType === 'video') {
+                // Video bg: clear to transparent so video DOM layer shows through
+                ctx.clearRect(cx, cy, cw, ch);
+            } else {
+                ctx.fillStyle = _bgColor;
+                ctx.fillRect(cx, cy, cw, ch);
+            }
+
+            // Step 2 — repaint underlay elements that overlap this clock region
+            for (var k = 0; k < underlayElements.length; k++) {
+                var under = underlayElements[k];
+                if (!overlaps(cx, cy, cw, ch,
+                              under.x || 0, under.y || 0,
+                              under.width || 0, under.height || 0)) {
+                    continue;
+                }
+
+                var elType = (under.type || '').toLowerCase();
+
+                if (elType === 'image') {
+                    // Synchronous repaint using cached loaded Image object
+                    drawImageElement(under, cx, cy, cw, ch);
+                } else {
+                    // Other types: re-render clipped to the clock region
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(cx, cy, cw, ch);
+                    ctx.clip();
+                    try {
+                        renderElement(ctx, under, currentCanvas);
+                    } catch (e) {
+                        console.warn('[CanvasRenderer] updateClocks underlay error:',
+                                     under.name || under.id, e);
+                    }
+                    ctx.restore();
+                }
+            }
+        }
+
+        // ── PASS 2: Redraw all clock texts on clean backgrounds ───────────
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        for (var j = 0; j < clockElements.length; j++) {
+            CanvasClock.render(ctx, clockElements[j]);
         }
 
         ctx.restore();
@@ -393,10 +559,10 @@ var CanvasRenderer = (function() {
     }
 
     /**
-     * 🔥 OPTIMIZED ANIMATION LOOP - ONLY UPDATES CLOCKS
+     * ðŸ”¥ OPTIMIZED ANIMATION LOOP - ONLY UPDATES CLOCKS
      */
     function startAnimationLoop() {
-        console.log('[CanvasRenderer] 🎬 Starting animation loop (clocks only)...');
+        console.log('[CanvasRenderer] ðŸŽ¬ Starting animation loop (clocks only)...');
         
         // Stop any existing animation
         if (animationFrameId) {
@@ -408,7 +574,7 @@ var CanvasRenderer = (function() {
             updateClocks();
         }, 1000);
 
-        console.log('[CanvasRenderer] ✅ Animation loop started');
+        console.log('[CanvasRenderer] âœ… Animation loop started');
     }
 
     /**
@@ -418,7 +584,7 @@ var CanvasRenderer = (function() {
         if (animationFrameId) {
             clearInterval(animationFrameId);
             animationFrameId = null;
-            console.log('[CanvasRenderer] ⏹️ Animation loop stopped');
+            console.log('[CanvasRenderer] â¹ï¸ Animation loop stopped');
         }
     }
 
@@ -434,8 +600,14 @@ var CanvasRenderer = (function() {
         if (typeof CanvasSlideshow !== 'undefined' && CanvasSlideshow.cleanup) {
             CanvasSlideshow.cleanup();
         }
+        if (typeof CanvasBackground !== 'undefined' && CanvasBackground.cleanup) {
+            CanvasBackground.cleanup();
+        }
         if (typeof CanvasAction !== 'undefined' && CanvasAction.cleanup) {
             CanvasAction.cleanup();
+        }
+        if (typeof CanvasWeather !== 'undefined' && CanvasWeather.cleanup) {
+            CanvasWeather.cleanup();
         }
         if (typeof CanvasRss !== 'undefined' && CanvasRss.cleanup) {
             CanvasRss.cleanup();
@@ -452,7 +624,11 @@ var CanvasRenderer = (function() {
         updateClocks: updateClocks,
         startAnimationLoop: startAnimationLoop,
         stopAnimationLoop: stopAnimationLoop,
-        cleanup: cleanup
+        cleanup: cleanup,
+        // Expose cached bg image so other renderers (slideshow) can repaint bg
+        get _cachedBgImage() { return cachedBgImage; },
+        get _cachedBgFit()   { return cachedBgFit;   },
+        get _cachedBgOpacity(){ return cachedBgOpacity; }
     };
 })();
 

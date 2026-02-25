@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.250"
+	appVersion:"v1.502"
 };
 var loadFilePaths = 'macrotv.json';
 var scount = 0, mainCount = 0;
@@ -21,8 +21,8 @@ var tvKeyCode = {
 	Exit: 1001,
 	Guide: 458
 };
-var deviceMac = null;
-// var deviceMac = '1cf43ff843b4';
+// var deviceMac = null;
+var deviceMac = '1cf43ff843b4';
 var deviceModelName = "";
 var lastNetworkType = "";
 var deviceIp  = null;
