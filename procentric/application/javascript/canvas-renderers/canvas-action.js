@@ -1234,9 +1234,24 @@ var CanvasAction = (function () {
 
     function handleDynamicPageAction(el) {
         var pageUuid = el.actionValue;
-        console.log('[CanvasAction] Loading page:', pageUuid);
+        console.log('[CanvasAction] Loading dynamic page:', pageUuid);
 
         if (typeof Main === 'undefined') { console.error('[CanvasAction] Main missing'); return; }
+
+        // ── Push the CURRENT page onto the history stack before navigating away.
+        //    We snapshot the full jsonTemplateData object so we can fully restore it
+        //    (canvas layout, elements, background, etc.) when the user presses EXIT.
+        if (Main.jsonTemplateData) {
+            if (!Array.isArray(Main.pageHistory)) Main.pageHistory = [];
+            var currentUuid = Main.jsonTemplateData.template_uuid || '';
+            console.log('[CanvasAction] Pushing page to history. uuid:', currentUuid,
+                        '| history depth:', Main.pageHistory.length + 1);
+            Main.pageHistory.push({
+                uuid:             currentUuid,
+                jsonTemplateData: Main.jsonTemplateData  // store entire data object
+            });
+        }
+
         if (typeof Main.ShowLoading === 'function') Main.ShowLoading();
 
         if (typeof macro !== 'undefined') {
@@ -1252,6 +1267,28 @@ var CanvasAction = (function () {
                         var result = typeof response === "string" ? JSON.parse(response) : response;
                         if (result.status === true) {
                             Main.jsonTemplateData = result.result;
+
+                            // ── Clean up the current canvas page before rendering
+                            //    the new one so videos, overlays and clocks from the
+                            //    previous page don't leak into the next page.
+                            try {
+                                if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.cleanup) {
+                                    CanvasRenderer.cleanup();
+                                } else {
+                                    try { if (typeof CanvasBackground !== 'undefined') CanvasBackground.cleanup(); } catch(_) {}
+                                    try { if (typeof CanvasAction     !== 'undefined') CanvasAction.cleanup();     } catch(_) {}
+                                }
+                            } catch(_e) {}
+
+                            // Remove any bg-video-wrap that lives on document.body
+                            try {
+                                var _bvw = document.getElementById('bg-video-wrap');
+                                if (_bvw && _bvw.parentNode) _bvw.parentNode.removeChild(_bvw);
+                            } catch(_e) {}
+
+                            // Restore backgrounds (may have been set transparent for video mode)
+                            try { document.body.style.background = ''; } catch(_e) {}
+
                             if (typeof Main.HideLoading === 'function') Main.HideLoading();
                             macro("#mainContent").html('');
                             if (typeof Util !== 'undefined' && Util.ourHotelPage) {
@@ -1260,15 +1297,27 @@ var CanvasAction = (function () {
                             }
                         } else {
                             console.error('[CanvasAction] API status false');
+                            // Pop the history entry we just pushed since navigation failed
+                            if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
+                                Main.pageHistory.pop();
+                            }
                             if (typeof Main.HideLoading === 'function') Main.HideLoading();
                         }
                     } catch (e) {
                         console.error('[CanvasAction] Parse error:', e);
+                        // Pop the history entry we just pushed since navigation failed
+                        if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
+                            Main.pageHistory.pop();
+                        }
                         if (typeof Main.HideLoading === 'function') Main.HideLoading();
                     }
                 },
                 error: function (err) {
                     console.error('[CanvasAction] AJAX error:', err);
+                    // Pop the history entry we just pushed since navigation failed
+                    if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
+                        Main.pageHistory.pop();
+                    }
                     if (typeof Main.HideLoading === 'function') Main.HideLoading();
                 },
                 timeout: 30000

@@ -4,6 +4,10 @@ var backData = [];
 var Main = {
   deviceProfile: "",
 };
+// Stack for dynamic-page navigation within the ourHotel canvas view.
+// Each entry: { uuid: <string>, jsonTemplateData: <object> }
+// Pushed before navigating TO a dynamic page; popped when EXIT is pressed.
+Main.pageHistory = [];
 Main.cachedBgBlobUrl = null;
 var disableNavigation = false;
 
@@ -76,6 +80,10 @@ Main.addBackData = function (path) {
 }
 
 Main.previousPage = function () {
+  // When truly leaving the ourHotel canvas view, the canvas page-history
+  // stack is no longer valid — clear it so stale entries never interfere.
+  Main.pageHistory = [];
+
   if(backData.length > 0) {
     presentPagedetails = backData[backData.length-1];
     macro("#mainContent").html('');
@@ -83,7 +91,50 @@ Main.previousPage = function () {
     backData.pop();
     view = presentPagedetails.view
   }
-}
+};
+
+/**
+ * Main.navigateBackCanvas()
+ *
+ * Called by Navigation.ourHotelPageNavigation when EXIT is pressed.
+ *
+ * Logic:
+ *   1. If Main.pageHistory has entries  → pop the last canvas page,
+ *      restore Main.jsonTemplateData and re-render Util.ourHotelPage().
+ *      The user stays inside the "ourHotel" view.
+ *   2. If Main.pageHistory is empty     → call Main.previousPage() to
+ *      leave the ourHotel view entirely and return to the caller view.
+ *
+ * The caller (navigation.js) is responsible for running canvas/video
+ * cleanup BEFORE calling this function.
+ */
+Main.navigateBackCanvas = function () {
+  if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
+    var prevEntry = Main.pageHistory.pop();
+    console.log('[Main] navigateBackCanvas: restoring page uuid:', prevEntry.uuid,
+                '| remaining history depth:', Main.pageHistory.length);
+
+    // Restore the template data for the previous canvas page
+    Main.jsonTemplateData = prevEntry.jsonTemplateData;
+
+    // Show loading while DOM swap happens
+    try { Main.ShowLoading(); } catch(e) {}
+
+    // Re-render the canvas page
+    if (typeof Util !== 'undefined' && Util.ourHotelPage) {
+      macro("#mainContent").html('');
+      macro("#mainContent").html(Util.ourHotelPage());
+      macro("#mainContent").show();
+    }
+
+    try { Main.HideLoading(); } catch(e) {}
+
+  } else {
+    // No canvas page history left — exit the ourHotel view entirely
+    console.log('[Main] navigateBackCanvas: history empty, calling previousPage()');
+    Main.previousPage();
+  }
+};
 
 // QR code
 Main.generateQrCode = function (key, code) {

@@ -655,9 +655,18 @@ Navigation.ourHotelPageNavigation = function (event) {
                     }
                 } catch (e) {}
 
-                if (typeof Main !== 'undefined' && Main.previousPage) {
+                // ── Page-history-aware back navigation ──────────────────────────
+                // Main.navigateBackCanvas() handles the full decision:
+                //   • pageHistory has entries  → restore previous canvas page
+                //   • pageHistory is empty     → call Main.previousPage() and
+                //                                leave the ourHotel view entirely
+                if (typeof Main !== 'undefined' && Main.navigateBackCanvas) {
+                    Main.navigateBackCanvas();
+                } else if (typeof Main !== 'undefined' && Main.previousPage) {
+                    // Fallback if navigateBackCanvas is not available
                     Main.previousPage();
                 }
+                // ────────────────────────────────────────────────────────────────
 
             }, 1500);
 

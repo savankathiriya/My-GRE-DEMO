@@ -451,9 +451,12 @@ var CanvasWeather = (function() {
         var data = el.weatherData;
 
         var canvas = document.getElementById('templateCanvas');
-        if (!canvas) return;
-        var container = canvas.parentElement;
+        var container = document.getElementById('our-hotel-container');
+        if (!container && canvas) container = canvas.parentElement;
         if (!container) return;
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
 
         var elId = String(el.id || el.name || 'weather');
         // Remove stale overlay
@@ -467,17 +470,18 @@ var CanvasWeather = (function() {
         var w       = Math.ceil(el.width   || 200);
         var h       = Math.ceil(el.height  || 100);
         var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
-        var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
+        var zIndex  = (el.zIndex && el.zIndex !== 'auto' && !isNaN(Number(el.zIndex)))
+                      ? Math.max(20, Number(el.zIndex) + 10) : 20;
         var padding = el.backgroundPadding || 10;
         var baseFontSize = el.fontSize || 40;
 
         var wrap = document.createElement('div');
         wrap.setAttribute('data-canvas-weather-id', elId);
-        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;';
-        wrap.style.left         = x + 'px';
-        wrap.style.top          = y + 'px';
-        wrap.style.width        = w + 'px';
-        wrap.style.height       = h + 'px';
+        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;box-sizing:border-box;';
+        wrap.style.left      = x + 'px';
+        wrap.style.top       = y + 'px';
+        wrap.style.minWidth  = w + 'px';
+        wrap.style.minHeight = h + 'px';
         wrap.style.opacity      = String(opacity);
         wrap.style.zIndex       = String(zIndex);
         wrap.style.padding      = padding + 'px';
@@ -496,61 +500,82 @@ var CanvasWeather = (function() {
             wrap.style.transformOrigin = 'center center';
         }
 
-        /* Build HTML weather content */
-        var html = '';
-        var fw = el.textBold ? 'bold' : 'normal';
-
-        var tempValue = data.temperature
+        /* ── Build HTML mirroring all 3 canvas render modes ── */
+        var html        = '';
+        var fw          = el.textBold ? 'bold' : 'normal';
+        var tempValue   = data.temperature
             ? (el.unit === 'fahrenheit' ? data.temperature.fahrenheit : data.temperature.celsius)
             : '--';
+        var tempUnit    = el.unit === 'fahrenheit' ? '&deg;F' : '&deg;C';
+        var displayMode = el.weatherDisplayMode;
+        var hasFlags    = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
 
-        /* Title / location */
-        if (el.showTitle && (el.titleLabel || data.location)) {
-            var titleText = el.titleLabel || data.location || 'Location';
+        /* Title row — shared by all modes */
+        function _titleHtml() {
+            if (!el.showTitle || (!el.titleLabel && !(data && data.location))) return '';
+            var t   = el.titleLabel || (data && data.location) || 'Location';
             var tfs = el.titleFontSize || 20;
-            html += '<div style="font-size:' + tfs + 'px;font-weight:' + (el.titleBold ? 'bold' : 'normal') +
-                    ';color:' + (el.titleColor || '#ffffff') + ';margin-bottom:8px;white-space:nowrap;">&#128205; ' +
-                    _escapeHtml(titleText) + '</div>';
+            return '<div style="font-size:' + tfs + 'px;font-weight:' + (el.titleBold ? 'bold' : 'normal') +
+                   ';color:' + (el.titleColor || '#ffffff') + ';margin-bottom:8px;white-space:nowrap;">' +
+                   '&#128205;&nbsp;' + _escapeHtml(t) + '</div>';
         }
 
-        /* Temperature */
-        html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                ';white-space:nowrap;margin-bottom:6px;">&#127777; ' + tempValue + '&deg;C</div>';
+        /* Standard detail row */
+        function _row(icon, text, mb) {
+            return '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                   ';white-space:nowrap;margin-bottom:' + (mb || 0) + 'px;">' +
+                   icon + '&nbsp;' + text + '</div>';
+        }
 
-        /* Conditions */
-        if (el.showConditions && data.conditions) {
+        if (displayMode === 'detailed') {
+            /* ── MODE 1: explicit detailed — mirrors renderDetailedWeather() ── */
+            html += _titleHtml();
+            html += _row('&#127777;', tempValue + tempUnit, 6);
+            if (el.showConditions && data.conditions)
+                html += _row('&#9925;', _escapeHtml(data.conditions), 6);
+            if (el.showHumidity && typeof data.humidity !== 'undefined')
+                html += _row('&#128167;', 'Humidity: ' + data.humidity + '%', 6);
+            if (el.showWindSpeed && typeof data.windSpeed !== 'undefined')
+                html += _row('&#128168;', 'Wind: ' + data.windSpeed + ' km/h', 6);
+            if (el.showVisibility && typeof data.visibility !== 'undefined')
+                html += _row('&#128065;', 'Visibility: ' + data.visibility + ' km', 0);
+
+        } else if (!displayMode && hasFlags) {
+            /* ── MODE 2: no weatherDisplayMode + flags → inline — mirrors renderInlineWeather() ──
+               Row 1: [weather icon]  28°C
+               Row 2: Mainly Clear · 💧 54% · 💨 10.1 km/h                    */
+            html += _titleHtml();
+
+            /* Row 1 — large icon + temperature */
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;margin-bottom:6px;">&#9925; ' + _escapeHtml(data.conditions) + '</div>';
-        }
+                    ';white-space:nowrap;margin-bottom:4px;">' +
+                    '&#9925;&nbsp;' + tempValue + tempUnit + '</div>';
 
-        /* Humidity */
-        if (el.showHumidity && typeof data.humidity !== 'undefined') {
+            /* Row 2 — compact strip */
+            var subFs = Math.max(12, Math.round(baseFontSize * 0.38));
+            var parts = [];
+            if (el.showConditions  && data.conditions)
+                parts.push(_escapeHtml(data.conditions));
+            if (el.showHumidity && typeof data.humidity !== 'undefined')
+                parts.push('&#128167;&nbsp;' + data.humidity + '%');
+            if (el.showWindSpeed && typeof data.windSpeed !== 'undefined')
+                parts.push('&#128168;&nbsp;' + data.windSpeed + ' km/h');
+            if (el.showVisibility && typeof data.visibility !== 'undefined')
+                parts.push('&#128065;&nbsp;' + data.visibility + ' km');
+            if (parts.length) {
+                html += '<div style="font-size:' + subFs + 'px;white-space:nowrap;opacity:0.95;">' +
+                        parts.join('&nbsp;&nbsp;&middot;&nbsp;&nbsp;') + '</div>';
+            }
+
+        } else {
+            /* ── MODE 3: compact — mirrors renderCompactWeather() ── */
+            html += _titleHtml();
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;margin-bottom:6px;">&#128167; Humidity: ' + data.humidity + '%</div>';
-        }
-
-        /* Wind */
-        if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
-            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;margin-bottom:6px;">&#128168; Wind: ' + data.windSpeed + ' km/h</div>';
-        }
-
-        /* Visibility */
-        if (el.showVisibility && typeof data.visibility !== 'undefined') {
-            html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;">&#128065; Visibility: ' + data.visibility + ' km</div>';
-        }
-
-        /* Compact (no detailed flags) */
-        if (!el.showConditions && !el.showHumidity && !el.showWindSpeed && !el.showVisibility) {
-            /* already rendered temp above */
+                    ';white-space:nowrap;">' +
+                    '&#9925;&nbsp;' + tempValue + tempUnit + '</div>';
         }
 
         wrap.innerHTML = html;
-
-        if (!container.style.position || container.style.position === 'static') {
-            container.style.position = 'relative';
-        }
 
         container.appendChild(wrap);
         _weatherDomOverlays.push(wrap);
@@ -596,14 +621,20 @@ var CanvasWeather = (function() {
             }
         }
         
-        var data = el.weatherData;
-        
-        // Determine display mode
-        var isDetailed = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
-        
-        if (isDetailed) {
+        var data        = el.weatherData;
+        var displayMode = el.weatherDisplayMode; // 'detailed' | undefined/null
+        var hasFlags    = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
+
+        if (displayMode === 'detailed') {
+            // Explicit detailed: stacked rows with icon per field
             renderDetailedWeather(ctx, el, data);
+        } else if (!displayMode && hasFlags) {
+            // No weatherDisplayMode but flags set → inline style (screenshot):
+            // Row 1: [weather icon] [large temp]
+            // Row 2: Conditions · 💧 54% · 💨 10.1 km/h
+            renderInlineWeather(ctx, el, data);
         } else {
+            // Compact: just weather icon + temperature
             renderCompactWeather(ctx, el, data);
         }
         
@@ -710,6 +741,69 @@ var CanvasWeather = (function() {
             
             drawIcon(ctx, 'eye', padding, textMiddleY - iconSize / 2, iconSize);
             ctx.fillText(visibilityText, padding + iconSize + 12, textMiddleY);
+        }
+    }
+
+    /**
+     * Inline weather — used when weatherDisplayMode is absent but flags are set.
+     * Matches screenshot:
+     *   Row 1: [weather icon]  28°C          (large)
+     *   Row 2: Mainly Clear · 💧 54% · 💨 10.1 km/h  (small)
+     */
+    function renderInlineWeather(ctx, el, data) {
+        var padding     = el.backgroundPadding || 10;
+        var fontSize    = el.fontSize || 50;
+        var iconSize    = Math.round(fontSize * 1.2);
+        var subFontSize = Math.max(12, Math.round(fontSize * 0.38));
+        var subIconSize = Math.round(subFontSize * 1.1);
+        var tempValue   = data.temperature
+            ? (el.unit === 'fahrenheit' ? data.temperature.fahrenheit : data.temperature.celsius)
+            : '--';
+        var tempUnit    = el.unit === 'fahrenheit' ? '\u00b0F' : '\u00b0C';
+
+        ctx.textAlign    = 'left';
+        ctx.textBaseline = 'middle';
+
+        // ── Row 1: weather icon + large temperature ──
+        var row1CY = padding + iconSize / 2;
+        drawWeatherIcon(ctx, data.weatherCode, padding, row1CY - iconSize / 2, iconSize);
+        ctx.font      = (el.textBold ? 'bold ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
+        ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
+        ctx.fillText(tempValue + tempUnit, padding + iconSize + 14, row1CY);
+
+        // ── Row 2: compact detail strip ──
+        var row2CY = padding + iconSize + 8 + subFontSize / 2;
+        ctx.font      = subFontSize + 'px ' + (el.textFont || 'Arial');
+        ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
+
+        var curX = padding;
+        var sep  = '  \u00b7  '; // middle dot separator
+
+        if (el.showConditions && data.conditions) {
+            ctx.fillText(data.conditions, curX, row2CY);
+            curX += ctx.measureText(data.conditions).width;
+        }
+        if (el.showHumidity && typeof data.humidity !== 'undefined') {
+            if (curX > padding) { ctx.fillText(sep, curX, row2CY); curX += ctx.measureText(sep).width; }
+            drawIcon(ctx, 'droplet', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + 3;
+            var ht = data.humidity + '%';
+            ctx.fillText(ht, curX, row2CY);
+            curX += ctx.measureText(ht).width;
+        }
+        if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
+            if (curX > padding) { ctx.fillText(sep, curX, row2CY); curX += ctx.measureText(sep).width; }
+            drawIcon(ctx, 'wind', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + 3;
+            var wt = data.windSpeed + ' km/h';
+            ctx.fillText(wt, curX, row2CY);
+            curX += ctx.measureText(wt).width;
+        }
+        if (el.showVisibility && typeof data.visibility !== 'undefined') {
+            if (curX > padding) { ctx.fillText(sep, curX, row2CY); curX += ctx.measureText(sep).width; }
+            drawIcon(ctx, 'eye', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + 3;
+            ctx.fillText(data.visibility + ' km', curX, row2CY);
         }
     }
 

@@ -562,7 +562,7 @@ var CanvasClock = (function() {
             return dateStr + '  ' + timeStr;
         }
         if (displayMode === 'countdown') {
-            var target = el.targetDate ? new Date(el.targetDate) : new Date();
+            var target = el.targetDateTime ? new Date(el.targetDateTime) : (el.targetDate ? new Date(el.targetDate) : new Date());
             var diff   = Math.max(0, target - now);
             var days   = Math.floor(diff / 86400000);
             var hrs    = Math.floor((diff % 86400000) / 3600000);
@@ -581,14 +581,27 @@ var CanvasClock = (function() {
     }
 
     function _renderAsDom(el) {
-        var elId = String(el.id || el.name || 'clock');
+        var elId        = String(el.id || el.name || 'clock');
+        var clockType   = (el.clockType   || '').toLowerCase();
+        var displayMode = (el.displayMode || '').toLowerCase();
+        var isAnalog    = (clockType === 'analog') &&
+                          (displayMode === 'clock' || displayMode === 'time' ||
+                           displayMode === '' || !displayMode);
 
-        /* If overlay exists just update the text */
-        if (_clockDomOverlays[elId]) {
-            _clockDomOverlays[elId].span.textContent = _getClockText(el);
+        /* ── ANALOG: update existing canvas overlay ── */
+        if (isAnalog && _clockDomOverlays[elId]) {
+            _drawAnalogOnDomCanvas(_clockDomOverlays[elId].canvas, el);
+            return;
+        }
+        /* ── TEXT modes: refresh text only ── */
+        if (!isAnalog && _clockDomOverlays[elId]) {
+            if (_clockDomOverlays[elId].span) {
+                _clockDomOverlays[elId].span.textContent = _getClockText(el);
+            }
             return;
         }
 
+        /* ── First-time creation ── */
         var container = (typeof CanvasVideoBgHelper !== 'undefined')
             ? CanvasVideoBgHelper.getContainer()
             : document.getElementById('our-hotel-container') || document.body;
@@ -599,12 +612,10 @@ var CanvasClock = (function() {
         var h       = Math.ceil(el.height  || 60);
         var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
         var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
-        var fontSize = el.fontSize || Math.min(w / 6, h * 0.6);
-        fontSize = Math.max(fontSize, 10);
 
         var wrap = document.createElement('div');
         wrap.setAttribute('data-canvas-clock-id', elId);
-        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;display:flex;align-items:center;justify-content:center;';
+        wrap.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;';
         wrap.style.left         = x + 'px';
         wrap.style.top          = y + 'px';
         wrap.style.width        = w + 'px';
@@ -616,45 +627,189 @@ var CanvasClock = (function() {
         if (el.enableBackground && el.backgroundColor && el.backgroundColor !== 'transparent') {
             wrap.style.backgroundColor = el.backgroundColor;
         }
-
         if (el.rotation && el.rotation !== 0) {
             wrap.style.transform       = 'rotate(' + el.rotation + 'deg)';
             wrap.style.webkitTransform = 'rotate(' + el.rotation + 'deg)';
             wrap.style.transformOrigin = 'center center';
         }
-
-        var span = document.createElement('span');
-        span.textContent   = _getClockText(el);
-        span.style.cssText = 'display:block;margin:0;padding:0;white-space:nowrap;';
-        span.style.fontSize   = fontSize + 'px';
-        span.style.fontFamily = el.fontFamily || 'Arial';
-        span.style.fontWeight = el.fontWeight || 'normal';
-        span.style.color      = el.color || '#ffffff';
-        span.style.textAlign  = 'center';
-        span.style.lineHeight = '1';
-
         if (!container.style.position || container.style.position === 'static') {
             container.style.position = 'relative';
         }
 
-        wrap.appendChild(span);
+        var overlayEntry = { wrap: wrap, span: null, canvas: null, timer: null };
+
+        if (isAnalog) {
+            /* ── ANALOG: <canvas> inside wrapper, redrawn every second ── */
+            var cvs = document.createElement('canvas');
+            cvs.width  = w;
+            cvs.height = h;
+            cvs.style.cssText = 'display:block;width:' + w + 'px;height:' + h + 'px;';
+            wrap.appendChild(cvs);
+            overlayEntry.canvas = cvs;
+            _drawAnalogOnDomCanvas(cvs, el);
+
+            overlayEntry.timer = setInterval(function () {
+                if (!wrap.parentNode) {
+                    clearInterval(overlayEntry.timer);
+                    delete _clockDomOverlays[elId];
+                    return;
+                }
+                _drawAnalogOnDomCanvas(cvs, el);
+            }, 1000);
+
+        } else {
+            /* ── TEXT (digital / countdown / date / datetime) ── */
+            var fontSize = el.fontSize || Math.min(w / 6, h * 0.6);
+            fontSize = Math.max(fontSize, 10);
+
+            wrap.style.display        = 'flex';
+            wrap.style.alignItems     = 'center';
+            wrap.style.justifyContent = 'center';
+
+            var span = document.createElement('span');
+            span.textContent   = _getClockText(el);
+            span.style.cssText = 'display:block;margin:0;padding:0;white-space:nowrap;';
+            span.style.fontSize   = fontSize + 'px';
+            span.style.fontFamily = el.fontFamily || 'Arial';
+            span.style.fontWeight = el.fontWeight || 'normal';
+            span.style.color      = el.color || '#ffffff';
+            span.style.textAlign  = 'center';
+            span.style.lineHeight = '1';
+            wrap.appendChild(span);
+            overlayEntry.span = span;
+
+            overlayEntry.timer = setInterval(function () {
+                if (!wrap.parentNode) {
+                    clearInterval(overlayEntry.timer);
+                    delete _clockDomOverlays[elId];
+                    return;
+                }
+                span.textContent = _getClockText(el);
+            }, 1000);
+        }
+
         container.appendChild(wrap);
-
-        /* Live-update ticker (every second) */
-        var timer = setInterval(function () {
-            if (!wrap.parentNode) {
-                clearInterval(timer);
-                delete _clockDomOverlays[elId];
-                return;
-            }
-            span.textContent = _getClockText(el);
-        }, 1000);
-
-        _clockDomOverlays[elId] = { wrap: wrap, span: span, timer: timer };
-        console.log('[CanvasClock] DOM clock overlay created:', elId);
+        _clockDomOverlays[elId] = overlayEntry;
+        console.log('[CanvasClock] DOM clock overlay created:', elId, isAnalog ? '(analog canvas)' : '(text)');
     }
 
-    function cleanup() {
+    /**
+     * Draw an analog clock face onto a DOM <canvas> element.
+     * Used exclusively in video-background mode as a DOM overlay.
+     */
+    function _drawAnalogOnDomCanvas(cvs, el) {
+        var ctx2 = cvs.getContext('2d');
+        if (!ctx2) return;
+
+        var w = cvs.width;
+        var h = cvs.height;
+        ctx2.clearRect(0, 0, w, h);
+
+        var centerX = w / 2;
+        var centerY = h / 2;
+        var radius  = Math.min(w, h) / 2 - 4;
+
+        var now          = new Date();
+        var hours        = now.getHours() % 12;
+        var minutes      = now.getMinutes();
+        var seconds      = now.getSeconds();
+        var milliseconds = now.getMilliseconds();
+
+        /* Clock face */
+        ctx2.beginPath();
+        ctx2.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx2.fillStyle = el.clockFaceColor || '#ffffff';
+        ctx2.fill();
+
+        if ((el.clockBorderWidth || 0) > 0) {
+            ctx2.strokeStyle = el.clockBorderColor || '#000000';
+            ctx2.lineWidth   = el.clockBorderWidth || 2;
+            ctx2.stroke();
+        }
+
+        /* Numbers */
+        if (el.showNumbers !== false) {
+            var numSize = el.numberSize || 14;
+            ctx2.font         = 'bold ' + numSize + 'px ' + (el.fontFamily || 'Arial');
+            ctx2.fillStyle    = el.numberColor || '#000000';
+            ctx2.textAlign    = 'center';
+            ctx2.textBaseline = 'middle';
+            var numR  = radius * 0.75;
+            var roman = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+            for (var i = 1; i <= 12; i++) {
+                var ang = (i * 30 - 90) * Math.PI / 180;
+                ctx2.fillText(
+                    el.romanNumerals ? roman[i - 1] : String(i),
+                    centerX + Math.cos(ang) * numR,
+                    centerY + Math.sin(ang) * numR
+                );
+            }
+        }
+
+        /* Hour markers */
+        if (el.showHourMarkers !== false) {
+            ctx2.strokeStyle = el.markerColor || '#000000';
+            ctx2.lineWidth   = 3;
+            ctx2.lineCap     = 'round';
+            for (var j = 0; j < 12; j++) {
+                var a = (j * 30 - 90) * Math.PI / 180;
+                ctx2.beginPath();
+                ctx2.moveTo(centerX + Math.cos(a) * radius * 0.85, centerY + Math.sin(a) * radius * 0.85);
+                ctx2.lineTo(centerX + Math.cos(a) * radius * 0.95, centerY + Math.sin(a) * radius * 0.95);
+                ctx2.stroke();
+            }
+        }
+
+        /* Minute markers */
+        if (el.showMinuteMarkers) {
+            ctx2.strokeStyle = el.minuteMarkerColor || '#cccccc';
+            ctx2.lineWidth   = 1;
+            ctx2.lineCap     = 'round';
+            for (var k = 0; k < 60; k++) {
+                if (k % 5 !== 0) {
+                    var b = (k * 6 - 90) * Math.PI / 180;
+                    ctx2.beginPath();
+                    ctx2.moveTo(centerX + Math.cos(b) * radius * 0.90, centerY + Math.sin(b) * radius * 0.90);
+                    ctx2.lineTo(centerX + Math.cos(b) * radius * 0.95, centerY + Math.sin(b) * radius * 0.95);
+                    ctx2.stroke();
+                }
+            }
+        }
+
+        /* Hands */
+        var hourAngle   = ((hours % 12) + minutes / 60 + seconds / 3600) * 30;
+        var minuteAngle = (minutes + seconds / 60) * 6;
+        var secondAngle = (seconds + milliseconds / 1000) * 6;
+
+        function _hand(angle, length, lw, color) {
+            ctx2.save();
+            ctx2.translate(centerX, centerY);
+            ctx2.rotate((angle - 90) * Math.PI / 180);
+            ctx2.beginPath();
+            ctx2.moveTo(-8, 0);
+            ctx2.lineTo(length, 0);
+            ctx2.strokeStyle = color;
+            ctx2.lineWidth   = lw;
+            ctx2.lineCap     = 'round';
+            ctx2.stroke();
+            ctx2.restore();
+        }
+
+        _hand(hourAngle,   radius * 0.5,  el.hourHandWidth   || 4, el.hourHandColor   || '#000000');
+        _hand(minuteAngle, radius * 0.7,  el.minuteHandWidth || 3, el.minuteHandColor || '#000000');
+        if (el.showSeconds !== false) {
+            _hand(secondAngle, radius * 0.85, el.secondHandWidth || 1, el.secondHandColor || '#ff0000');
+        }
+
+        /* Center dot */
+        ctx2.beginPath();
+        ctx2.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+        ctx2.fillStyle = el.centerDotColor || '#000000';
+        ctx2.fill();
+    }
+
+
+        function cleanup() {
         for (var id in _clockDomOverlays) {
             if (_clockDomOverlays.hasOwnProperty(id)) {
                 var entry = _clockDomOverlays[id];

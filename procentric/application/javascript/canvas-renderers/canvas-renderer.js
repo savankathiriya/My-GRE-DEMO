@@ -121,23 +121,32 @@ var CanvasRenderer = (function() {
         canvas.style.margin = '0';
         canvas.style.padding = '0';
 
+        // CRITICAL: declare bgType HERE before use — previously declared at line ~173
+        // causing JS var-hoisting to make it undefined when checked at line ~130.
+        var bgType = (templateData.canvas && templateData.canvas.backgroundType) || 'color';
+
         // VIDEO BACKGROUND: make canvas transparent so bg-video-wrap shows through.
         // Layer order inside #our-hotel-container (bottom -> top):
         //   z-index:1  bg-video-wrap (background video DOM div)
         //   z-index:2  templateCanvas (transparent canvas - elements drawn here)
-        //   z-index:10+ GIF overlays, action image overlays (above canvas)
-        //   z-index:1000 focus overlays
+        //   z-index:20+ weather/clock/gif DOM overlays
         if (bgType === 'video') {
-            canvas.style.background = 'transparent';
-            canvas.style.zIndex = '2';
+            canvas.style.background      = 'transparent';
+            canvas.style.backgroundColor = 'transparent';
+            canvas.style.zIndex          = '2';
             document.body.style.background = 'none';
+            document.body.style.backgroundColor = 'transparent';
             var _videoCont = document.getElementById('our-hotel-container');
-            if (_videoCont) _videoCont.style.background = 'none';
+            if (_videoCont) {
+                _videoCont.style.background      = 'none';
+                _videoCont.style.backgroundColor = 'transparent';
+            }
             ctx.clearRect(0, 0, screenW, screenH);
             console.log('[CanvasRenderer] Video BG: canvas transparent z-index:2');
         } else {
-            canvas.style.background = '';
-            canvas.style.zIndex = '';
+            canvas.style.background      = '';
+            canvas.style.backgroundColor = '';
+            canvas.style.zIndex          = '';
         }
 
         // Reset transform - NO OFFSET, NO EXTRA TRANSLATION
@@ -169,9 +178,7 @@ var CanvasRenderer = (function() {
         cachedBgFit = canvasConfig.backgroundFit || 'cover';
         cachedBgOpacity = typeof canvasConfig.backgroundOpacity !== 'undefined' ? canvasConfig.backgroundOpacity : 1;
 
-        // Check if background is an image
-        var bgType = canvasConfig.backgroundType || 'color';
-        
+        // Route to correct background renderer
         if (bgType === 'image' && canvasConfig.backgroundImage) {
             // Background is an image - render it first, THEN render elements
             renderBackgroundThenElements(ctx, canvasConfig, canvasConfig.width, canvasConfig.height, sortedElements, canvas);
