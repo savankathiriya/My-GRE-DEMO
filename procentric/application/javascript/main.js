@@ -117,17 +117,15 @@ Main.navigateBackCanvas = function () {
     // Restore the template data for the previous canvas page
     Main.jsonTemplateData = prevEntry.jsonTemplateData;
 
-    // Show loading while DOM swap happens
-    try { Main.ShowLoading(); } catch(e) {}
-
-    // Re-render the canvas page
+    // ── Render the previous canvas page NOW, behind the loading overlay.
+    //    The caller (Navigation.ourHotelPageNavigation EXIT handler) already
+    //    called ShowLoading() and will call HideLoading() after the full
+    //    6-second window — so we only render here, no loading calls needed.
     if (typeof Util !== 'undefined' && Util.ourHotelPage) {
       macro("#mainContent").html('');
       macro("#mainContent").html(Util.ourHotelPage());
       macro("#mainContent").show();
     }
-
-    try { Main.HideLoading(); } catch(e) {}
 
   } else {
     // No canvas page history left — exit the ourHotel view entirely
@@ -808,8 +806,24 @@ Main.weatherApi = function (callback) {
 Main.jsontemplateApi = function() {
   console.log('[API] Fetching template data...');
   
-  // ✅ Show loading popup
+  // ✅ Show loading popup — will stay visible for a minimum of 6 seconds
   showLoadingPopup();
+  var _tplLoadStart    = Date.now();
+  var _TPL_LOADING_MIN_MS = 6000;
+
+  /**
+   * Hides the loading popup only after the minimum 6-second window has
+   * elapsed since showLoadingPopup() was called.
+   */
+  function _hideAfterMinTime() {
+    var _elapsed   = Date.now() - _tplLoadStart;
+    var _remaining = _TPL_LOADING_MIN_MS - _elapsed;
+    if (_remaining > 0) {
+      setTimeout(function () { hideLoadingPopup(); }, _remaining);
+    } else {
+      hideLoadingPopup();
+    }
+  }
 
   var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
   var AppUrl = getCustomAppUrl(cached , 'custom')
@@ -835,24 +849,29 @@ Main.jsontemplateApi = function() {
           view = "ourHotel";
           presentPagedetails.view = view;
           
+          // ── Render the template page NOW, behind the loading overlay.
+          //    The page is fully painted while the loader is still visible.
+          //    Loading will be hidden only after the 6-second window closes.
           console.log('[API] Rendering OurHotel page...');
           macro("#mainContent").html('');
           macro("#mainContent").html(Util.ourHotelPage());
           macro("#mainContent").show();
-          
-          // ⚠️ Don't hide loading yet - it will be hidden after canvas renders
+
+          // Hide loading after the minimum 6-second window
+          _hideAfterMinTime();
+
         } else {
           console.error('[API] Template API returned status: false');
-          hideLoadingPopup(); // ✅ Hide on error
+          _hideAfterMinTime(); // ✅ Hide on error (still respects min time)
         }
       } catch (parseError) {
         console.error('[API] Failed to parse template response:', parseError);
-        hideLoadingPopup(); // ✅ Hide on error
+        _hideAfterMinTime(); // ✅ Hide on error
       }
     },
     error: function(err) {
       console.error('[API] Template load failed:', err);
-      hideLoadingPopup(); // ✅ Hide on error
+      _hideAfterMinTime(); // ✅ Hide on error
       
       // Show error to user
       macro("#mainContent").html('<div style="color:#fff;text-align:center;padding:50px;">Failed to load template. Please try again.</div>');

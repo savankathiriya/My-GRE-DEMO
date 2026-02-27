@@ -610,16 +610,18 @@ Navigation.ourHotelPageNavigation = function (event) {
             console.log('[Navigation] Exiting OurHotel page');
 
             // ── Step 1 (INSTANT): Show loading spinner to cover the screen.
-            //    This immediately hides the video background + all canvas overlays
-            //    from the user's view while cleanup runs behind it.
+            //    Loading will remain visible for a minimum of 6 seconds.
+            var _exitLoadStart = Date.now();
+            var _EXIT_LOADING_MIN_MS = 6000;
+
             try {
                 if (typeof Main !== 'undefined' && Main.ShowLoading) {
                     Main.ShowLoading();
                 }
             } catch (e) {}
 
-            // ── Step 2: Run all cleanup after a short delay so the spinner
-            //    has time to paint before heavy DOM removal starts.
+            // ── Step 2: Run cleanup + render previous page behind the loader,
+            //    then hide loading only after the 6-second window has elapsed.
             setTimeout(function () {
 
                 // Stop HLS streams
@@ -648,27 +650,35 @@ Navigation.ourHotelPageNavigation = function (event) {
                 // Restore body background (set to 'none' for video mode)
                 try { document.body.style.background = ''; } catch (e) {}
 
-                // Hide loading and navigate back
-                try {
-                    if (typeof Main !== 'undefined' && Main.HideLoading) {
-                        Main.HideLoading();
-                    }
-                } catch (e) {}
-
-                // ── Page-history-aware back navigation ──────────────────────────
-                // Main.navigateBackCanvas() handles the full decision:
-                //   • pageHistory has entries  → restore previous canvas page
-                //   • pageHistory is empty     → call Main.previousPage() and
-                //                                leave the ourHotel view entirely
+                // ── Render the previous template page NOW (behind the loading overlay).
+                //    navigateBackCanvas restores jsonTemplateData and calls ourHotelPage()
+                //    so the page is fully painted before the loader is lifted.
                 if (typeof Main !== 'undefined' && Main.navigateBackCanvas) {
                     Main.navigateBackCanvas();
                 } else if (typeof Main !== 'undefined' && Main.previousPage) {
-                    // Fallback if navigateBackCanvas is not available
                     Main.previousPage();
                 }
-                // ────────────────────────────────────────────────────────────────
 
-            }, 1500);
+                // ── Hide loading only after the full 6-second window has elapsed.
+                var _elapsed   = Date.now() - _exitLoadStart;
+                var _remaining = _EXIT_LOADING_MIN_MS - _elapsed;
+                if (_remaining > 0) {
+                    setTimeout(function () {
+                        try {
+                            if (typeof Main !== 'undefined' && Main.HideLoading) {
+                                Main.HideLoading();
+                            }
+                        } catch (e) {}
+                    }, _remaining);
+                } else {
+                    try {
+                        if (typeof Main !== 'undefined' && Main.HideLoading) {
+                            Main.HideLoading();
+                        }
+                    } catch (e) {}
+                }
+
+            }, 100);
 
             break;
     }

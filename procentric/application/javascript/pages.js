@@ -1522,7 +1522,6 @@ Util.ourHotelPage = function () {
                     function _hideOnce() {
                         if (_loaderHidden) return;
                         _loaderHidden = true;
-                        hideLoadingPopup();
                         console.log('[OurHotel] ✅ BG video ready - loader hidden');
                     }
 
@@ -1566,7 +1565,6 @@ Util.ourHotelPage = function () {
                 } else {
                     // Non-video background - hide after short render delay
                     setTimeout(function () {
-                        hideLoadingPopup();
                         console.log('[OurHotel] ✅ Loading hidden - canvas fully rendered');
                     }, 500);
                 }
@@ -1601,7 +1599,6 @@ Util.ourHotelPage = function () {
             
         } catch (e) {
             console.error('[OurHotel] Canvas render failed:', e);
-            hideLoadingPopup();
             
             var canvas = document.getElementById('templateCanvas');
             if (canvas) {

@@ -1254,6 +1254,27 @@ var CanvasAction = (function () {
 
         if (typeof Main.ShowLoading === 'function') Main.ShowLoading();
 
+        // ── Track loading start time so we can enforce a minimum 6-second display
+        var loadingStartTime = Date.now();
+        var LOADING_MIN_MS   = 6000;
+
+        /**
+         * Hides the loading indicator only after the minimum display time has
+         * elapsed.  If the API responded faster than 6 s, we wait out the
+         * remainder; if it took longer we hide immediately.
+         */
+        function hideLoadingAfterMinTime() {
+            var elapsed   = Date.now() - loadingStartTime;
+            var remaining = LOADING_MIN_MS - elapsed;
+            if (remaining > 0) {
+                setTimeout(function () {
+                    if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                }, remaining);
+            } else {
+                if (typeof Main.HideLoading === 'function') Main.HideLoading();
+            }
+        }
+
         if (typeof macro !== 'undefined') {
             macro.ajax({
                 url:  apiPrefixUrl + "json-template?template_uuid=" + pageUuid,
@@ -1289,19 +1310,25 @@ var CanvasAction = (function () {
                             // Restore backgrounds (may have been set transparent for video mode)
                             try { document.body.style.background = ''; } catch(_e) {}
 
-                            if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                            // ── Render the next template page NOW (during loading time)
+                            //    The page is drawn while the loading overlay is still visible.
+                            //    HideLoading is deferred until the full 6-second window closes.
                             macro("#mainContent").html('');
                             if (typeof Util !== 'undefined' && Util.ourHotelPage) {
                                 macro("#mainContent").html(Util.ourHotelPage());
                                 macro("#mainContent").show();
                             }
+
+                            // Hide loading only after the minimum 6-second window
+                            hideLoadingAfterMinTime();
+
                         } else {
                             console.error('[CanvasAction] API status false');
                             // Pop the history entry we just pushed since navigation failed
                             if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
                                 Main.pageHistory.pop();
                             }
-                            if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                            hideLoadingAfterMinTime();
                         }
                     } catch (e) {
                         console.error('[CanvasAction] Parse error:', e);
@@ -1309,7 +1336,7 @@ var CanvasAction = (function () {
                         if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
                             Main.pageHistory.pop();
                         }
-                        if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                        hideLoadingAfterMinTime();
                     }
                 },
                 error: function (err) {
@@ -1318,7 +1345,7 @@ var CanvasAction = (function () {
                     if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
                         Main.pageHistory.pop();
                     }
-                    if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                    hideLoadingAfterMinTime();
                 },
                 timeout: 30000
             });

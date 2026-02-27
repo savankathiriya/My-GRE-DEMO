@@ -446,6 +446,46 @@ var CanvasWeather = (function() {
         } catch (e) { return false; }
     }
 
+    /**
+     * Creates a small <canvas> with the drawn weather condition icon and returns
+     * it as a base64 data-URL <img> tag — used in DOM overlay so the condition
+     * icon looks identical to the canvas-drawn version (via drawWeatherIcon)
+     * without relying on unicode emoji support.
+     */
+    function _weatherIconImgTag(weatherCode, size) {
+        try {
+            var c = document.createElement('canvas');
+            c.width  = size;
+            c.height = size;
+            var ctx2 = c.getContext('2d');
+            drawWeatherIcon(ctx2, weatherCode, 0, 0, size);
+            return '<img src="' + c.toDataURL() + '" width="' + size + '" height="' + size +
+                   '" style="vertical-align:middle;display:inline-block;">';
+        } catch(e) {
+            // Fallback to unicode if canvas fails
+            return '<span style="font-size:' + size + 'px;vertical-align:middle;">' +
+                   _weatherUnicode(weatherCode) + '</span>';
+        }
+    }
+
+    /**
+     * Creates a small <canvas> with the drawn icon and returns it as a
+     * base64 data-URL <img> tag — used in DOM overlay for droplet/wind icons.
+     */
+    function _iconImgTag(iconName, size) {
+        try {
+            var c = document.createElement('canvas');
+            c.width  = size;
+            c.height = size;
+            var ctx2 = c.getContext('2d');
+            drawIcon(ctx2, iconName, 0, 0, size);
+            return '<img src="' + c.toDataURL() + '" width="' + size + '" height="' + size +
+                   '" style="vertical-align:middle;display:inline-block;">';
+        } catch(e) {
+            return '';
+        }
+    }
+
     function _renderWeatherAsDom(el) {
         if (!el.weatherData) return;
         var data = el.weatherData;
@@ -510,24 +550,14 @@ var CanvasWeather = (function() {
         var displayMode = el.weatherDisplayMode;
         var hasFlags    = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
 
-        /* Resolve weather condition unicode from weatherCode */
-        function _weatherUnicode(code) {
-            if (code === 0)                              return '&#9728;&#65039;';  // ☀️ clear
-            if (code === 1)                              return '&#127780;&#65039;'; // 🌤️ mainly clear
-            if (code === 2)                              return '&#9925;';           // ⛅ partly cloudy
-            if ([3,45,48].indexOf(code) >= 0)            return '&#9729;&#65039;';  // ☁️ cloudy/fog
-            if ([51,53,55,61,63,65].indexOf(code) >= 0) return '&#127783;&#65039;'; // 🌧️ rain
-            if ([71,73,75,77,85,86].indexOf(code) >= 0) return '&#127784;&#65039;'; // 🌨️ snow
-            if ([80,81,82].indexOf(code) >= 0)           return '&#127782;&#65039;'; // 🌦️ showers
-            if ([95,96,99].indexOf(code) >= 0)           return '&#9928;&#65039;';  // ⛈️ thunderstorm
-            return '&#9925;';
-        }
-
-        var ICO_CONDITION = _weatherUnicode(data.weatherCode);
         var ICO_HUMIDITY  = '&#128167;';          // 💧
         var ICO_WIND      = '&#128168;';          // 💨
         var ICO_EYE       = '&#128065;&#65039;';  // 👁️
         var ICO_PIN       = '&#128205;';          // 📍
+
+        /* ── Weather condition icon: drawn via drawWeatherIcon on a temp canvas ── */
+        var condIconSize = baseFontSize;
+        var ICO_CONDITION = _weatherIconImgTag(data.weatherCode, condIconSize);
 
         /* Title row — shared by all modes */
         function _titleHtml() {
@@ -539,7 +569,7 @@ var CanvasWeather = (function() {
                    ICO_PIN + '&nbsp;' + _escapeHtml(t) + '</div>';
         }
 
-        /* Standard detail row — flex so <img> thermometer aligns with text */
+        /* Standard detail row — flex so icon aligns with text */
         function _row(icon, text, mb) {
             return '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
                    ';white-space:nowrap;margin-bottom:' + (mb || 0) + 'px;' +
@@ -564,32 +594,30 @@ var CanvasWeather = (function() {
         } else if (hasFlags && (displayMode === 'simple' || !displayMode)) {
             /* ── MODE 2: 'simple' / inline — NO title, tight separator
                Row 1: [weather icon]  26°C
-               Row 2: Clear · 💧 66% · 💨 15.2 km/h                           */
-            /* NO title row for simple/inline mode — matches Image 1 layout    */
+               Row 2: Clear · [droplet] 66% · [wind] 15.2 km/h              */
 
-            /* Row 1 — large condition icon + temperature */
+            var subFs   = Math.max(13, Math.round(baseFontSize * 0.42));
+            var iconSz  = Math.round(subFs * 0.9);
+            var gapPx   = Math.max(2, Math.round(subFs * 0.18));
+
+            /* Row 1 — drawn weather condition icon + temperature */
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;margin-bottom:2px;">' +
+                    ';white-space:nowrap;margin-bottom:2px;display:flex;align-items:center;gap:6px;">' +
                     ICO_CONDITION + '&nbsp;' + tempValue + tempUnit + '</div>';
 
-            /* Row 2 — tiny colored dot + value, · separator, matches Image 2 exactly */
-            var subFs  = Math.max(13, Math.round(baseFontSize * 0.42));
-            var dotPx  = Math.max(5, Math.round(subFs * 0.44));  // dot diameter
-            var gapPx  = Math.max(2, Math.round(subFs * 0.18));  // gap after dot
-            function _dotSpan(color) {
-                return '<span style="display:inline-block;width:' + dotPx + 'px;height:' + dotPx + 'px;' +
-                       'border-radius:50%;background:' + color + ';vertical-align:middle;' +
-                       'margin-right:' + gapPx + 'px;margin-bottom:1px;"></span>';
-            }
+            /* Row 2 — drawn icons for humidity and wind (replaces _dotSpan) */
             var parts = [];
             if (el.showConditions && data.conditions)
                 parts.push(_escapeHtml(data.conditions));
             if (el.showHumidity && typeof data.humidity !== 'undefined')
-                parts.push(_dotSpan('#4A9FE8') + data.humidity + '%');
+                parts.push(_iconImgTag('droplet', iconSz) +
+                           '<span style="margin-left:' + gapPx + 'px;">' + data.humidity + '%</span>');
             if (el.showWindSpeed && typeof data.windSpeed !== 'undefined')
-                parts.push(_dotSpan('#9B9BAB') + data.windSpeed + ' km/h');
+                parts.push(_iconImgTag('wind', iconSz) +
+                           '<span style="margin-left:' + gapPx + 'px;">' + data.windSpeed + ' km/h</span>');
             if (el.showVisibility && typeof data.visibility !== 'undefined')
-                parts.push(_dotSpan('#8B7AB8') + data.visibility + ' km');
+                parts.push(_iconImgTag('eye', iconSz) +
+                           '<span style="margin-left:' + gapPx + 'px;">' + data.visibility + ' km</span>');
             if (parts.length) {
                 html += '<div style="font-size:' + subFs + 'px;white-space:nowrap;opacity:0.95;' +
                         'display:flex;align-items:center;gap:' + gapPx + 'px;">' +
@@ -600,7 +628,7 @@ var CanvasWeather = (function() {
             /* ── MODE 3: compact — mirrors renderCompactWeather() ── */
             html += _titleHtml();
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
-                    ';white-space:nowrap;">' +
+                    ';white-space:nowrap;display:flex;align-items:center;gap:6px;">' +
                     ICO_CONDITION + '&nbsp;' + tempValue + tempUnit + '</div>';
         }
 
@@ -609,6 +637,18 @@ var CanvasWeather = (function() {
         container.appendChild(wrap);
         _weatherDomOverlays.push(wrap);
         console.log('[CanvasWeather] DOM overlay created:', elId);
+    }
+
+    function _weatherUnicode(code) {
+        if (code === 0)                              return '&#9728;&#65039;';
+        if (code === 1)                              return '&#127780;&#65039;';
+        if (code === 2)                              return '&#9925;';
+        if ([3,45,48].indexOf(code) >= 0)            return '&#9729;&#65039;';
+        if ([51,53,55,61,63,65].indexOf(code) >= 0) return '&#127783;&#65039;';
+        if ([71,73,75,77,85,86].indexOf(code) >= 0) return '&#127784;&#65039;';
+        if ([80,81,82].indexOf(code) >= 0)           return '&#127782;&#65039;';
+        if ([95,96,99].indexOf(code) >= 0)           return '&#9928;&#65039;';
+        return '&#9925;';
     }
 
     function _escapeHtml(t) {
@@ -670,19 +710,14 @@ var CanvasWeather = (function() {
         }
         
         var data        = el.weatherData;
-        var displayMode = el.weatherDisplayMode; // 'detailed' | undefined/null
+        var displayMode = el.weatherDisplayMode;
         var hasFlags    = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
 
         if (displayMode === 'detailed') {
-            // Explicit detailed: stacked rows with icon per field
             renderDetailedWeather(ctx, el, data);
         } else if (hasFlags && (displayMode === 'simple' || !displayMode)) {
-            // 'simple' mode with flags OR no mode with flags → inline style:
-            // Row 1: [weather icon] [large temp]
-            // Row 2: Conditions · 💧 54% · 💨 10.1 km/h
             renderInlineWeather(ctx, el, data);
         } else {
-            // Compact: just weather icon + temperature
             renderCompactWeather(ctx, el, data);
         }
         
@@ -692,12 +727,9 @@ var CanvasWeather = (function() {
     /**
      * Draw a canvas icon identified by name, vertically centred at (x, middleY).
      * Returns the icon size as width consumed so callers can offset following text.
-     * On canvas (non-video) we always use the drawn icon helpers — emoji rendering
-     * is unreliable on LG WebOS canvas contexts.
      */
     function drawCanvasIcon(ctx, iconName, x, middleY, size) {
         if (iconName === 'weather') {
-            // Should not be called this way; use drawCanvasWeatherIcon instead
             return size;
         }
         drawIcon(ctx, iconName, x, middleY - size / 2, size);
@@ -713,7 +745,7 @@ var CanvasWeather = (function() {
     }
 
     /**
-     * Render detailed weather widget — thermometer drawn, all other icons unicode
+     * Render detailed weather widget
      */
     function renderDetailedWeather(ctx, el, data) {
         var padding = el.backgroundPadding || 10;
@@ -721,7 +753,6 @@ var CanvasWeather = (function() {
         var baseFontSize = el.fontSize || 50;
         var iconSize = Math.round(baseFontSize * 0.85);
 
-        // Title/Location — 📍 unicode pin
         if (el.showTitle && (el.titleLabel || data.location)) {
             var titleText = el.titleLabel || data.location || 'Location';
             var titleFontSize = el.titleFontSize || 20;
@@ -742,13 +773,11 @@ var CanvasWeather = (function() {
             currentY += titleFontSize + 15;
         }
 
-        // Setup base font
         ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
         ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
 
-        // Temperature — 🌡️ DRAWN (canvas shape, not unicode)
         var tempValue = data.temperature
             ? (el.unit === 'fahrenheit' ? data.temperature.fahrenheit : data.temperature.celsius)
             : '--';
@@ -758,7 +787,6 @@ var CanvasWeather = (function() {
         ctx.fillText(tempValue + tempUnit, padding + iconSize + 12, textMiddleY);
         currentY += baseFontSize + 12;
 
-        // Conditions — weather unicode icon
         if (el.showConditions && data.conditions) {
             textMiddleY = currentY + baseFontSize / 2;
             var condW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, textMiddleY, iconSize);
@@ -768,7 +796,6 @@ var CanvasWeather = (function() {
             currentY += baseFontSize + 10;
         }
 
-        // Humidity — 💧 unicode
         if (el.showHumidity && typeof data.humidity !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
             var humW = drawCanvasIcon(ctx, 'droplet', padding, textMiddleY, iconSize);
@@ -778,7 +805,6 @@ var CanvasWeather = (function() {
             currentY += baseFontSize + 10;
         }
 
-        // Wind speed — 💨 unicode
         if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
             var windW = drawCanvasIcon(ctx, 'wind', padding, textMiddleY, iconSize);
@@ -788,7 +814,6 @@ var CanvasWeather = (function() {
             currentY += baseFontSize + 10;
         }
 
-        // Visibility — 👁️ unicode
         if (el.showVisibility && typeof data.visibility !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
             var visW = drawCanvasIcon(ctx, 'eye', padding, textMiddleY, iconSize);
@@ -800,15 +825,16 @@ var CanvasWeather = (function() {
 
     /**
      * Inline weather — simple mode with flags.
-     * Layout (matches Image 1):
-     *   Row 1: [weather icon]  26°C              (large, no title)
-     *   Row 2: Clear · [droplet] 66% · [wind] 15.2 km/h  (small, tight spacing)
+     * Row 1: [weather icon]  26°C
+     * Row 2: Clear · [droplet icon] 66% · [wind icon] 15.2 km/h
+     *
+     * CHANGED: replaced _dot('#4A9FE8') with drawIcon(ctx,'droplet',...)
+     *          replaced _dot('#9B9BAB') with drawIcon(ctx,'wind',...)
      */
     function renderInlineWeather(ctx, el, data) {
         var padding     = el.backgroundPadding || 10;
         var fontSize    = el.fontSize || 50;
         var iconSize    = Math.round(fontSize * 1.2);
-        // sub-row: slightly larger ratio so icons/text are readable
         var subFontSize = Math.max(13, Math.round(fontSize * 0.42));
         var subIconSize = Math.round(subFontSize * 0.9);
         var tempValue   = data.temperature
@@ -819,27 +845,24 @@ var CanvasWeather = (function() {
         ctx.textAlign    = 'left';
         ctx.textBaseline = 'middle';
 
-        // ── Row 1: weather icon + large temperature (NO title/location shown here) ──
+        // ── Row 1: weather icon + large temperature ──
         var row1CY = padding + iconSize / 2;
         var wIconW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, row1CY, iconSize);
         ctx.font      = (el.textBold ? 'bold ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
         ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
         ctx.fillText(tempValue + tempUnit, padding + wIconW + 8, row1CY);
 
-        // ── Row 2: compact strip exactly like Image 2 ──
-        // subFontSize drives everything; icons are tiny filled circles
-        var row2CY  = padding + iconSize + 3 + subFontSize / 2;
-        var dotR    = Math.max(3, Math.round(subFontSize * 0.22)); // tiny dot radius
-        var GAP     = Math.round(subFontSize * 0.18);              // gap between elements
+        // ── Row 2: compact strip ──
+        var row2CY = padding + iconSize + 3 + subFontSize / 2;
+        var GAP    = Math.round(subFontSize * 0.18);
 
-        ctx.font      = subFontSize + 'px ' + (el.textFont || 'Arial');
-        ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
+        ctx.font         = subFontSize + 'px ' + (el.textFont || 'Arial');
+        ctx.fillStyle    = el.textColor || el.color || '#FFFFFF';
         ctx.textBaseline = 'middle';
         ctx.textAlign    = 'left';
 
         var curX = padding;
 
-        // helper: draw separator · with fixed small gaps
         function _sep() {
             ctx.font = subFontSize + 'px ' + (el.textFont || 'Arial');
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
@@ -848,48 +871,44 @@ var CanvasWeather = (function() {
             curX += ctx.measureText('\u00b7').width + GAP;
         }
 
-        // helper: draw a small filled circle (the tiny icon dot)
-        function _dot(color) {
-            ctx.save();
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(curX + dotR, row2CY, dotR, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-            curX += dotR * 2 + GAP;
-        }
-
-        // Condition text
+        // Condition text (unchanged)
         if (el.showConditions && data.conditions) {
             ctx.font = subFontSize + 'px ' + (el.textFont || 'Arial');
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
             ctx.fillText(data.conditions, curX, row2CY);
             curX += ctx.measureText(data.conditions).width;
         }
-        // Humidity: · 🔵 66%
+
+        // Humidity: · [droplet icon] 66%
         if (el.showHumidity && typeof data.humidity !== 'undefined') {
             if (curX > padding) _sep();
-            _dot('#4A9FE8');
+            drawIcon(ctx, 'droplet', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + GAP;
             ctx.font = subFontSize + 'px ' + (el.textFont || 'Arial');
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
             var ht = data.humidity + '%';
             ctx.fillText(ht, curX, row2CY);
             curX += ctx.measureText(ht).width;
         }
-        // Wind: · ⬤ 15.2 km/h
+
+        // Wind: · [wind icon] 15.2 km/h
         if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
             if (curX > padding) _sep();
-            _dot('#9B9BAB');
+            drawIcon(ctx, 'wind', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + GAP;
             ctx.font = subFontSize + 'px ' + (el.textFont || 'Arial');
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
             var wt = data.windSpeed + ' km/h';
             ctx.fillText(wt, curX, row2CY);
             curX += ctx.measureText(wt).width;
         }
-        // Visibility: · ⬤ value
+
+        // Visibility (unchanged — keeps original _dot style would have been here,
+        // but original had no _dot for visibility, so left as-is)
         if (el.showVisibility && typeof data.visibility !== 'undefined') {
             if (curX > padding) _sep();
-            _dot('#8B7AB8');
+            drawIcon(ctx, 'eye', curX, row2CY - subIconSize / 2, subIconSize);
+            curX += subIconSize + GAP;
             ctx.font = subFontSize + 'px ' + (el.textFont || 'Arial');
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
             ctx.fillText(data.visibility + ' km', curX, row2CY);
@@ -897,7 +916,7 @@ var CanvasWeather = (function() {
     }
 
     /**
-     * Render compact weather widget — weather unicode icon + temperature
+     * Render compact weather widget — weather icon + temperature
      */
     function renderCompactWeather(ctx, el, data) {
         var padding = el.backgroundPadding || 10;
@@ -911,7 +930,6 @@ var CanvasWeather = (function() {
         var iconSize = Math.round(fontSize * 1.1);
         var centerY  = el.height / 2;
 
-        // Weather unicode icon
         var wIconW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, centerY, iconSize);
 
         ctx.font      = (el.textBold ? 'bold ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
