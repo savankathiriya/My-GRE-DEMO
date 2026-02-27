@@ -461,12 +461,16 @@ var CanvasShapes = (function() {
             /* No translate needed -- fakeEl.x/y = 0 */
             try {
                 switch (shapeType) {
-                    case 'circle':    _drawCircle(mCtx, fakeEl);    break;
-                    case 'rectangle': _drawRect(mCtx, fakeEl);      break;
-                    case 'line':      _drawLine(mCtx, fakeEl);      break;
-                    case 'triangle':  _drawTriangle(mCtx, fakeEl);  break;
-                    case 'diamond':   _drawDiamond(mCtx, fakeEl);   break;
-                    default:          _drawRect(mCtx, fakeEl);      break;
+                    case 'circle':    _drawCircle(mCtx, fakeEl);              break;
+                    case 'rectangle': _drawRect(mCtx, fakeEl);                break;
+                    case 'line':      _drawLine(mCtx, fakeEl);                break;
+                    case 'triangle':  _drawTriangle(mCtx, fakeEl);            break;
+                    case 'diamond':   _drawDiamond(mCtx, fakeEl);             break;
+                    case 'arrow':     _drawArrow(mCtx, fakeEl);               break;
+                    case 'pentagon':  _drawPolygon(mCtx, fakeEl, 5);          break;
+                    case 'hexagon':   _drawPolygon(mCtx, fakeEl, 6);          break;
+                    case 'star':      _drawStar(mCtx, fakeEl);                break;
+                    default:          _drawRect(mCtx, fakeEl);                break;
                 }
             } catch (e) {
                 console.warn('[CanvasShapes] mini-canvas draw error:', e);
@@ -537,6 +541,82 @@ var CanvasShapes = (function() {
         ctx.beginPath();
         ctx.moveTo(el.width/2,0); ctx.lineTo(el.width,el.height/2);
         ctx.lineTo(el.width/2,el.height); ctx.lineTo(0,el.height/2);
+        ctx.closePath(); ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+    function _drawArrow(ctx, el) {
+        var direction = el.direction || 'right';
+        var headSize  = el.arrowHeadSize || 0.3;
+        ctx.fillStyle   = el.backgroundColor || '#f59e0b';
+        ctx.strokeStyle = el.borderColor     || '#d97706';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath();
+        var w = el.width, h = el.height;
+        switch (direction) {
+            case 'left': {
+                var hw = w * headSize, sh = h * 0.4, sy = (h - sh) / 2;
+                ctx.moveTo(hw, sy); ctx.lineTo(w, sy); ctx.lineTo(w, sy + sh);
+                ctx.lineTo(hw, sy + sh); ctx.lineTo(hw, h);
+                ctx.lineTo(0, h / 2); ctx.lineTo(hw, 0);
+                break;
+            }
+            case 'up': {
+                var hh = h * headSize, sw2 = w * 0.4, sl = (w - sw2) / 2;
+                ctx.moveTo(sl, h); ctx.lineTo(sl, hh); ctx.lineTo(0, hh);
+                ctx.lineTo(w / 2, 0); ctx.lineTo(w, hh);
+                ctx.lineTo(w - sl, hh); ctx.lineTo(w - sl, h);
+                break;
+            }
+            case 'down': {
+                var hh2 = h * headSize, sw3 = w * 0.4, sl2 = (w - sw3) / 2;
+                ctx.moveTo(sl2, 0); ctx.lineTo(sl2, h - hh2); ctx.lineTo(0, h - hh2);
+                ctx.lineTo(w / 2, h); ctx.lineTo(w, h - hh2);
+                ctx.lineTo(w - sl2, h - hh2); ctx.lineTo(w - sl2, 0);
+                break;
+            }
+            default: { /* right */
+                var hw2 = w * headSize, sh2 = h * 0.4, sy2 = (h - sh2) / 2;
+                ctx.moveTo(0, sy2); ctx.lineTo(w - hw2, sy2); ctx.lineTo(w - hw2, 0);
+                ctx.lineTo(w, h / 2); ctx.lineTo(w - hw2, h);
+                ctx.lineTo(w - hw2, sy2 + sh2); ctx.lineTo(0, sy2 + sh2);
+            }
+        }
+        ctx.closePath(); ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+    function _drawPolygon(ctx, el, sides) {
+        var cx = el.width / 2, cy = el.height / 2;
+        var r  = Math.min(el.width, el.height) / 2;
+        ctx.fillStyle   = el.backgroundColor || '#8b5cf6';
+        ctx.strokeStyle = el.borderColor     || '#7c3aed';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath();
+        for (var i = 0; i < sides; i++) {
+            var angle = (i * 2 * Math.PI / sides) - Math.PI / 2;
+            var px = cx + r * Math.cos(angle);
+            var py = cy + r * Math.sin(angle);
+            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath(); ctx.fill();
+        if ((el.borderWidth||0) > 0) ctx.stroke();
+    }
+    function _drawStar(ctx, el) {
+        var points      = el.points      || 5;
+        var innerRatio  = el.innerRadius || 0.5;
+        var cx = el.width / 2, cy = el.height / 2;
+        var outerR = Math.min(el.width, el.height) / 2;
+        var innerR = outerR * innerRatio;
+        ctx.fillStyle   = el.backgroundColor || '#eab308';
+        ctx.strokeStyle = el.borderColor     || '#ca8a04';
+        ctx.lineWidth   = el.borderWidth      || 2;
+        ctx.beginPath();
+        for (var i = 0; i < points * 2; i++) {
+            var angle = (i * Math.PI / points) - Math.PI / 2;
+            var r = (i % 2 === 0) ? outerR : innerR;
+            var px = cx + r * Math.cos(angle);
+            var py = cy + r * Math.sin(angle);
+            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
         ctx.closePath(); ctx.fill();
         if ((el.borderWidth||0) > 0) ctx.stroke();
     }
