@@ -179,17 +179,28 @@ var CanvasRenderer = (function() {
         cachedBgOpacity = typeof canvasConfig.backgroundOpacity !== 'undefined' ? canvasConfig.backgroundOpacity : 1;
 
         // Route to correct background renderer
-        if (bgType === 'image' && canvasConfig.backgroundImage) {
-            // Background is an image - render it first, THEN render elements
-            renderBackgroundThenElements(ctx, canvasConfig, canvasConfig.width, canvasConfig.height, sortedElements, canvas);
-        } else {
-            // Background is a color or video placeholder - render immediately
-            CanvasBackground.render(ctx, canvasConfig, canvasConfig.width, canvasConfig.height);
-            // Then render all elements immediately
-            renderAllElements(ctx, sortedElements, canvas);
+        // ✅ FIX: Wait for Google Fonts to load before rendering text elements
+        var _bgType         = bgType;
+        var _canvasConfig   = canvasConfig;
+        var _sortedElements = sortedElements;
+        var _ctx            = ctx;
+        var _canvas         = canvas;
+
+        function _doRender() {
+            if (_bgType === 'image' && _canvasConfig.backgroundImage) {
+                renderBackgroundThenElements(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height, _sortedElements, _canvas);
+            } else {
+                CanvasBackground.render(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height);
+                renderAllElements(_ctx, _sortedElements, _canvas);
+            }
+            console.log('[CanvasRenderer] ===== Canvas Render Complete =====');
         }
 
-        console.log('[CanvasRenderer] ===== Canvas Render Complete =====');
+        if (typeof CanvasFontLoader !== 'undefined') {
+            CanvasFontLoader.loadFromTemplate(originalTemplateData, _doRender);
+        } else {
+            _doRender();
+        }
     }
 
     /**

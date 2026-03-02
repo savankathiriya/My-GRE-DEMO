@@ -171,13 +171,27 @@ var CanvasText = (function() {
     }
 
     function getFontString(el) {
-        var fontStyle  = el.fontStyle  || 'normal';
-        var fontWeight = el.fontWeight || 'normal';
-        var fontSize   = el.fontSize   || 16;
-        var fontFamily = el.fontFamily || 'Arial';
+        var fontStyle  = el.fontStyle || 'normal';
+        var fontSize   = el.fontSize  || 16;
 
-        if (fontFamily.indexOf(' ') !== -1 && fontFamily.charAt(0) !== "'" && fontFamily.charAt(0) !== '"') {
-            fontFamily = "'" + fontFamily + "'";
+        // Use CanvasFontLoader helpers when available so that:
+        //   • composite families like "'JetBrains Mono', sans-serif" are cleaned to "JetBrains Mono"
+        //   • numeric weights like "600" / "800" are normalised to values LG WebKit handles
+        var fontWeight, fontFamily;
+
+        if (typeof CanvasFontLoader !== 'undefined') {
+            fontWeight = CanvasFontLoader.normalizeFontWeight(el.fontWeight);
+            fontFamily = CanvasFontLoader.normalizeFontFamily(el.fontFamily);
+        } else {
+            fontWeight = el.fontWeight || 'normal';
+            fontFamily = el.fontFamily || 'Arial';
+            // Strip existing quotes / fallback stack (legacy path)
+            fontFamily = fontFamily.split(',')[0].replace(/^['"\s]+|['"\s]+$/g, '') || 'Arial';
+        }
+
+        // Canvas ctx.font requires multi-word family names to be quoted
+        if (fontFamily.indexOf(' ') !== -1) {
+            fontFamily = '"' + fontFamily + '"';
         }
 
         return fontStyle + ' ' + fontWeight + ' ' + fontSize + 'px ' + fontFamily;
@@ -293,10 +307,18 @@ var CanvasText = (function() {
         var h       = Math.ceil(el.height  || 40);
         var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
         var zIndex  = (el.zIndex && el.zIndex !== 'auto') ? el.zIndex : 10;
-        var fontSize   = el.fontSize   || 16;
-        var fontFamily = el.fontFamily || 'Arial';
-        var fontWeight = el.fontWeight || 'normal';
-        var fontStyle  = el.fontStyle  || 'normal';
+        var fontSize  = el.fontSize  || 16;
+        var fontStyle = el.fontStyle || 'normal';
+
+        // Normalise family + weight the same way as canvas path
+        var fontFamily, fontWeight;
+        if (typeof CanvasFontLoader !== 'undefined') {
+            fontFamily = CanvasFontLoader.normalizeFontFamily(el.fontFamily);
+            fontWeight = CanvasFontLoader.normalizeFontWeight(el.fontWeight);
+        } else {
+            fontFamily = (el.fontFamily || 'Arial').split(',')[0].replace(/^['"\s]+|['"\s]+$/g, '') || 'Arial';
+            fontWeight = el.fontWeight || 'normal';
+        }
         var color      = el.color      || '#000000';
         var textAlign  = el.textAlign  || 'left';
         var paddingLeft  = el.paddingLeft  || 0;
