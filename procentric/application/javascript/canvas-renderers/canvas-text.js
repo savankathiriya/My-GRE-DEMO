@@ -106,8 +106,11 @@ var CanvasText = (function() {
 
         console.log('[CanvasText] Rendering:', renderEl.name || renderEl.id, 'Size:', renderEl.width + 'x' + renderEl.height);
 
-        // VIDEO BACKGROUND: render as DOM overlay so text is visible above video
-        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+        // VIDEO BACKGROUND or ANIMATION ENABLED: render as DOM overlay.
+        // CSS animations require DOM elements - canvas pixels cannot be animated.
+        var _hasAnimation = renderEl.animation && renderEl.animation.enabled &&
+                            renderEl.animation.type && renderEl.animation.type !== 'none';
+        if (_hasAnimation || (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg())) {
             _renderAsDom(renderEl);
             return;
         }
@@ -380,11 +383,14 @@ var CanvasText = (function() {
             span.style.textDecoration = el.textDecoration;
         }
         if (el.textStroke && el.textStrokeColor) {
-            span.style.webkitTextStroke = (el.textStrokeWidth || 1) + 'px ' + el.textStrokeColor;
+            var strokeWidth = el.textStrokeWidth || 1;
+            span.style.webkitTextStroke = strokeWidth + 'px ' + el.textStrokeColor;
+            span.style.textStroke       = strokeWidth + 'px ' + el.textStrokeColor;
         }
         if (el.textShadow) {
-            var si = 0.7;
-            span.style.textShadow = '2px 2px 4px rgba(0,0,0,' + si + ')';
+            var shadowBlur  = (typeof el.textShadowBlur  !== 'undefined') ? el.textShadowBlur  : 4;
+            var shadowColor = el.textShadowColor || '#000000';
+            span.style.textShadow = '2px 2px ' + shadowBlur + 'px ' + shadowColor;
         }
 
         if (!container.style.position || container.style.position === 'static') {
@@ -392,8 +398,20 @@ var CanvasText = (function() {
         }
 
         div.appendChild(span);
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            div.style.visibility = 'hidden';
+        }
         container.appendChild(div);
         _textDomOverlays.push(div);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, null);
+            }
+        }
+
         console.log('[CanvasText] DOM overlay created:', el.name || el.id);
     }
 

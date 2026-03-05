@@ -60,8 +60,9 @@ var CanvasGif = (function() {
         console.log('[CanvasGif] Element size (already scaled):', el.width, 'x', el.height);
         
         // Create img element overlay for GIF animation
+        // NOTE: Do NOT set .src yet — attach listeners first so cached images
+        // don't fire load before we can hear it.
         var gifOverlay = document.createElement('img');
-        gifOverlay.src = el.src;
         gifOverlay.className = 'gif-overlay-element';
         gifOverlay.setAttribute('data-element-id', el.id || el.name);
         
@@ -95,7 +96,14 @@ var CanvasGif = (function() {
         
         // Ensure GIF is visible
         gifOverlay.style.display = 'block';
-        gifOverlay.style.visibility = 'visible';
+        // If animation is configured, start hidden so the element is never
+        // seen at its natural position before the animation fires.
+        // canvas-animation.js _applyToNode() sets visibility:visible.
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            gifOverlay.style.visibility = 'hidden';
+        } else {
+            gifOverlay.style.visibility = 'visible';
+        }
         
         // Opacity
         var opacity = (typeof el.opacity !== 'undefined' ? el.opacity : 1);
@@ -136,25 +144,51 @@ var CanvasGif = (function() {
             console.log('[CanvasGif]   rotation:', el.rotation + 'deg');
         }
         
-        // Event listeners for debugging
+        // ✅ Ensure container is positioned relatively
+        if (!container.style.position || container.style.position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        // ✅ Append to DOM first, THEN attach listeners, THEN set src.
+        //    This order guarantees:
+        //    1. Element is in the DOM before load fires (needed for animation targeting)
+        //    2. Listeners are registered before src is assigned (avoids missed load
+        //       when the image is already cached by the browser)
+        container.appendChild(gifOverlay);
+
+        function _applyGifAnimation() {
+            if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+                if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                    CanvasAnimation.applyAnimation(el, canvas);
+                }
+            }
+        }
+
         gifOverlay.addEventListener('load', function() {
             console.log('[CanvasGif] ✓ GIF loaded successfully:', el.name || el.id);
+            // Apply CSS animation AFTER the image is loaded and painted.
+            // On first page visit with backgroundType=image, calling applyAnimation
+            // inline (before load) causes requestAnimationFrame to fire before the
+            // element is composited — the element snaps to final position instantly.
+            // Triggering from onload guarantees the element is visible first.
+            _applyGifAnimation();
         });
-        
+
         gifOverlay.addEventListener('error', function() {
             console.error('[CanvasGif] ✗ GIF failed to load:', el.name || el.id);
             console.error('[CanvasGif] GIF src:', el.src);
             showGifError(gifOverlay, el);
         });
-        
-        // ✅ Ensure container is positioned relatively
-        if (!container.style.position || container.style.position === 'static') {
-            container.style.position = 'relative';
+
+        // Set src last — for cached GIFs, load fires synchronously here.
+        // If the image is already complete (e.g. revisiting the page),
+        // onload won't fire again so we manually trigger animation.
+        gifOverlay.src = el.src;
+        if (gifOverlay.complete && gifOverlay.naturalWidth > 0) {
+            console.log('[CanvasGif] ✓ GIF already cached:', el.name || el.id);
+            _applyGifAnimation();
         }
-        
-        // ✅ Add to container (not body, same as video)
-        container.appendChild(gifOverlay);
-        
+
         console.log('[CanvasGif] ✓ Animated GIF overlay created and added to container');
     }
 

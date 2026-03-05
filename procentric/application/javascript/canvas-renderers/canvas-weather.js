@@ -634,8 +634,20 @@ var CanvasWeather = (function() {
 
         wrap.innerHTML = html;
 
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
         container.appendChild(wrap);
         _weatherDomOverlays.push(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, null);
+            }
+        }
+
         console.log('[CanvasWeather] DOM overlay created:', elId);
     }
 
@@ -688,8 +700,11 @@ var CanvasWeather = (function() {
             return;
         }
 
-        // VIDEO BACKGROUND: use DOM overlay
-        if (_isVideoBg()) {
+        // VIDEO BACKGROUND or ANIMATION ENABLED: use DOM overlay.
+        // CSS animations require DOM elements - canvas pixels cannot be animated.
+        var _hasAnimation = el.animation && el.animation.enabled &&
+                            el.animation.type && el.animation.type !== 'none';
+        if (_hasAnimation || _isVideoBg()) {
             _renderWeatherAsDom(el);
             return;
         }

@@ -21,8 +21,11 @@ var CanvasShapes = (function() {
         var shapeType = el.type.toLowerCase();
         console.log('[CanvasShapes] Rendering:', shapeType, '-', el.name || el.id);
 
-        // VIDEO BACKGROUND: render as DOM overlay (canvas draws are invisible over video bg)
-        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+        // VIDEO BACKGROUND or ANIMATION ENABLED: render as DOM overlay.
+        // CSS animations require DOM elements - canvas pixels cannot be animated.
+        var _hasAnimation = el.animation && el.animation.enabled &&
+                            el.animation.type && el.animation.type !== 'none';
+        if (_hasAnimation || (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg())) {
             _renderAsDom(el);
             return;
         }
@@ -484,8 +487,20 @@ var CanvasShapes = (function() {
             container.style.position = 'relative';
         }
 
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
         container.appendChild(wrap);
         _shapeDomOverlays.push(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, document.getElementById('templateCanvas'));
+            }
+        }
+
         console.log('[CanvasShapes] DOM overlay created:', shapeType, elId);
     }
 

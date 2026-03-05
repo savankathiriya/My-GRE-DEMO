@@ -35,6 +35,23 @@ var CanvasAction = (function () {
         } catch (e) { return false; }
     }
 
+    /* Helper: is a static image canvas background currently active?
+       When backgroundType=image, canvas-drawn content is covered by the
+       background image overlay, so any animated action element MUST be
+       rendered as a DOM overlay — canvas pixels are not animatable.       */
+    function _isImageBg() {
+        try {
+            var tj = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
+            return !!(tj && tj.canvas && tj.canvas.backgroundType === 'image');
+        } catch (e) { return false; }
+    }
+
+    /* Helper: does this element have animation enabled? */
+    function _hasAnimation(el) {
+        return !!(el.animation && el.animation.enabled &&
+                  el.animation.type && el.animation.type !== 'none');
+    }
+
     /* ================================================================
        PUBLIC: render()
        Called by CanvasRenderer for every action / button / card element
@@ -63,44 +80,56 @@ var CanvasAction = (function () {
         var hasImgData  = !hasVideo && !hasImage && el.imageData && el.imageData.trim() !== '';
         var hasAnyMedia = hasVideo || hasImage || hasImgData;
 
-        /* â”€â”€ Step 1 : draw solid background on canvas (no media only) */
-        ctx.save();
-        CanvasBase.applyTransformations(ctx, el);
+        /* Determine early whether this element will be a DOM overlay.
+           If yes, skip ALL canvas drawing (Steps 1 & 2) to prevent a ghost
+           copy of the element appearing on canvas behind the DOM overlay.
+           This fixes the "dual / shows on original position then animates"
+           issue and the "text disappears" issue when animation is enabled.  */
+        var _willUseDomOverlay = hasHlsVideo || hasVideo ||
+            ((hasImage || hasImgData) && (_isVideoBg() || _isImageBg() || _hasAnimation(el))) ||
+            (!hasAnyMedia && (_isVideoBg() || _isImageBg() || _hasAnimation(el)));
 
-        if (!hasAnyMedia && el.backgroundColor) {
-            ctx.fillStyle = el.backgroundColor;
-            if (el.borderRadius > 0) {
-                CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
-                ctx.fill();
-                /* re-clip for vignette */
-                if (el.vignetteEffect && el.vignetteEffect !== 'none') {
+        /* -- Step 1 : draw solid background on canvas (canvas-drawn only) */
+        if (!_willUseDomOverlay) {
+            ctx.save();
+            CanvasBase.applyTransformations(ctx, el);
+
+            if (!hasAnyMedia && el.backgroundColor) {
+                ctx.fillStyle = el.backgroundColor;
+                if (el.borderRadius > 0) {
                     CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
-                    ctx.clip();
+                    ctx.fill();
+                    /* re-clip for vignette */
+                    if (el.vignetteEffect && el.vignetteEffect !== 'none') {
+                        CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
+                        ctx.clip();
+                    }
+                } else {
+                    ctx.fillRect(0, 0, el.width, el.height);
                 }
-            } else {
-                ctx.fillRect(0, 0, el.width, el.height);
+                /* apply vignette over solid background */
+                if (el.vignetteEffect && el.vignetteEffect !== 'none') {
+                    CanvasBase.applyVignette(ctx, el.width, el.height,
+                                             el.vignetteEffect, el.vignetteIntensity || 1);
+                }
             }
-            /* apply vignette over solid background */
-            if (el.vignetteEffect && el.vignetteEffect !== 'none') {
-                CanvasBase.applyVignette(ctx, el.width, el.height,
-                                         el.vignetteEffect, el.vignetteIntensity || 1);
+
+            /* -- Step 2 : border */
+            var bw = el.borderWidth > 0 ? el.borderWidth : 0;
+            var bc = el.borderColor || '#d9d9d9';
+            if (bw > 0) {
+                ctx.strokeStyle = bc;
+                ctx.lineWidth   = bw;
+                if (el.borderRadius > 0) {
+                    CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
+                    ctx.stroke();
+                } else {
+                    ctx.strokeRect(0, 0, el.width, el.height);
+                }
             }
+            ctx.restore();
         }
 
-        /* â”€â”€ Step 2 : border â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-        var bw = el.borderWidth > 0 ? el.borderWidth : 0;
-        var bc = el.borderColor || '#d9d9d9';
-        if (bw > 0) {
-            ctx.strokeStyle = bc;
-            ctx.lineWidth   = bw;
-            if (el.borderRadius > 0) {
-                CanvasBase.roundRect(ctx, 0, 0, el.width, el.height, el.borderRadius);
-                ctx.stroke();
-            } else {
-                ctx.strokeRect(0, 0, el.width, el.height);
-            }
-        }
-        ctx.restore();
 
         /* â”€â”€ Step 3 : background media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         if (hasHlsVideo) {
@@ -146,7 +175,7 @@ var CanvasAction = (function () {
         } else if (hasImage) {
             var src = Array.isArray(el.backgroundImage)
                 ? el.backgroundImage[0] : el.backgroundImage;
-            if (_isVideoBg()) {
+            if (_isVideoBg() || _isImageBg() || _hasAnimation(el)) {
                 createActionDomOverlay(el, src);
             } else {
                 loadAndDrawActionBackground(ctx, el, src, 'url');
@@ -156,20 +185,19 @@ var CanvasAction = (function () {
             var src = el.imageData.indexOf('data:') === 0
                 ? el.imageData
                 : 'data:image/png;base64,' + el.imageData;
-            if (_isVideoBg()) {
+            if (_isVideoBg() || _isImageBg() || _hasAnimation(el)) {
                 createActionDomOverlay(el, src);
             } else {
                 loadAndDrawActionBackground(ctx, el, src, 'base64');
             }
 
         } else {
-            /* â"€â"€ button / none displayMode â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-               When canvas.backgroundType === 'video' the canvas is drawn
-               underneath the full-screen video element and any pixels drawn
-               onto the canvas are hidden behind it.  Use a DOM overlay div
-               (same approach as image cards in video-bg mode) so the button
-               renders on top of the background video.                       */
-            if (_isVideoBg()) {
+            /* ── button / none displayMode ──────────────────────────────────
+               When canvas.backgroundType === 'video' or 'image', the canvas
+               is covered by the background overlay so pixels are hidden.
+               Also force DOM when animation is enabled — canvas-drawn pixels
+               cannot be CSS-animated.                                         */
+            if (_isVideoBg() || _isImageBg() || _hasAnimation(el)) {
                 createActionButtonDomOverlay(el);
             } else {
                 drawActionIcon(ctx, el, function () {
@@ -869,8 +897,22 @@ var CanvasAction = (function () {
             container.style.position = 'relative';
         }
 
+        // If animation is configured, start hidden so the element is never seen
+        // at its natural position before the animation fires on first page load.
+        // canvas-animation.js _applyToNode() sets visibility:visible when ready.
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
+
         container.appendChild(wrap);
         _actionDomOverlays.push(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, document.getElementById('templateCanvas'));
+            }
+        }
 
         console.log('[CanvasAction] DOM overlay created:', elKey,
                     'at', x, y, w + 'x' + h, 'z:', zIndex);
@@ -942,8 +984,23 @@ var CanvasAction = (function () {
             container.style.position = 'relative';
         }
 
+        // If animation is configured, start hidden so the element is never seen
+        // at its natural position before the animation fires on first page load.
+        // canvas-animation.js _applyToNode() sets visibility:visible when ready.
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
+
         container.appendChild(wrap);
         _actionDomOverlays.push(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, document.getElementById('templateCanvas'));
+            }
+        }
+
         console.log('[CanvasAction] Button DOM overlay created:', elKey, 'at', x, y, w+'x'+h);
     }
 

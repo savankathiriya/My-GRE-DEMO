@@ -579,7 +579,18 @@ var CanvasSlideshow = (function() {
         }
 
         wrap.appendChild(imgEl);
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (element.animation && element.animation.enabled && element.animation.type && element.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
         container.appendChild(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (element.animation && element.animation.enabled && element.animation.type && element.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(element, document.getElementById('templateCanvas'));
+            }
+        }
 
         var state = {
             wrap: wrap,

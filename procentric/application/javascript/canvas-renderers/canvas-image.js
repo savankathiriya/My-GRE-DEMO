@@ -192,8 +192,19 @@ var CanvasImage = (function () {
         img.src = el.src;
 
         wrap.appendChild(img);
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
         container.appendChild(wrap);
         _domOverlays.push(wrap);
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, canvas);
+            }
+        }
 
         console.log('[CanvasImage] overlay at', x + ',' + y,
                     w + 'x' + h, 'z:', zIndex, 'fit:', fit);

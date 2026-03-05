@@ -65,6 +65,10 @@
             "VersionNo": 0.1
         },
         {
+            "FileName": "javascript/canvas-renderers/canvas-animation.js",
+            "VersionNo": 0.1
+        },
+        {
             "FileName": "javascript/canvas-renderers/canvas-font-loader.js",
             "VersionNo": 0.1
         },

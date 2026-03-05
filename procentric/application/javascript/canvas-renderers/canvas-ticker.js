@@ -99,6 +99,10 @@ var CanvasTicker = (function() {
         var overlay = document.createElement('div');
         overlay.id = 'ticker-overlay-' + elementId;
         overlay.className = 'ticker-overlay';
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            overlay.style.visibility = 'hidden';
+        }
         container.appendChild(overlay);
         tickerOverlays[elementId] = overlay;
         
@@ -284,7 +288,14 @@ var CanvasTicker = (function() {
         tickerAnimationIds[elementId] = styleId;
         
         overlay.innerHTML = html;
-        
+
+        // Apply CSS entry/exit animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, canvas);
+            }
+        }
+
         console.log('[CanvasTicker] ✅ Ticker animation started successfully!');
         console.log('[CanvasTicker] Element ID:', elementId);
         console.log('[CanvasTicker] Animation name:', animationName);

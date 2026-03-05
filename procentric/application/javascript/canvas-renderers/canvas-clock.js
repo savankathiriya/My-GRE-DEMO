@@ -16,8 +16,11 @@ var CanvasClock = (function() {
     function render(ctx, el) {
         console.log('[CanvasClock] Rendering:', el.name || el.id, 'DisplayMode:', el.displayMode, 'ClockType:', el.clockType);
 
-        // VIDEO BACKGROUND: render as live DOM overlay above the video layer
-        if (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg()) {
+        // VIDEO BACKGROUND or ANIMATION ENABLED: render as DOM overlay.
+        // CSS animations require DOM elements - canvas pixels cannot be animated.
+        var _hasAnimation = el.animation && el.animation.enabled &&
+                            el.animation.type && el.animation.type !== 'none';
+        if (_hasAnimation || (typeof CanvasVideoBgHelper !== 'undefined' && CanvasVideoBgHelper.isVideoBg())) {
             _renderAsDom(el);
             return;
         }
@@ -688,8 +691,20 @@ var CanvasClock = (function() {
             }, 1000);
         }
 
+        // Hide until animation fires (prevents flash at natural position on first load)
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            wrap.style.visibility = 'hidden';
+        }
         container.appendChild(wrap);
         _clockDomOverlays[elId] = overlayEntry;
+
+        // Apply CSS animation if configured on this element
+        if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
+            if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
+                CanvasAnimation.applyAnimation(el, null);
+            }
+        }
+
         console.log('[CanvasClock] DOM clock overlay created:', elId, isAnalog ? '(analog canvas)' : '(text)');
     }
 

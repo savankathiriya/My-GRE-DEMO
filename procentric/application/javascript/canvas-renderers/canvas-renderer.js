@@ -607,11 +607,14 @@ var CanvasRenderer = (function() {
     }
 
     /**
-     * Cleanup - remove GIF overlays and stop slideshows
+     * Cleanup - remove GIF overlays, animation overlays and stop slideshows
      */
     function cleanup() {
         stopAnimationLoop();
-        
+
+        if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.cleanup) {
+            CanvasAnimation.cleanup();
+        }
         if (typeof CanvasGif !== 'undefined' && CanvasGif.cleanup) {
             CanvasGif.cleanup();
         }
