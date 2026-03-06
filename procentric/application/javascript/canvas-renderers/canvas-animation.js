@@ -279,7 +279,7 @@ var CanvasAnimation = (function () {
     // at its original position.
     var _RESTORE_TYPES = { pan: true, pop: true, peek: true, slide: true, zoom: true };
 
-    function _restoreNodeAfterAnimation(node, anim) {
+    function _restoreNodeAfterAnimation(node, anim, originalOpacity) {
         var inOut = anim.inOut || 'in';
         if (!_RESTORE_TYPES[anim.type]) return;
         if (inOut !== 'out' && inOut !== 'both') return;
@@ -294,16 +294,28 @@ var CanvasAnimation = (function () {
             // Reset properties touched by the keyframes back to natural state
             node.style.transform       = '';
             node.style.webkitTransform = '';
-            node.style.opacity         = '';
+            // Restore to the element's configured opacity (not blank/1) so that
+            // elements with opacity < 1 in the response data keep their correct
+            // opacity after zoom / peek / slide / pop / pan animations finish.
+            node.style.opacity         = (originalOpacity !== undefined && originalOpacity !== null)
+                                             ? String(originalOpacity)
+                                             : '1';
             node.style.visibility      = 'visible';
 
             console.log('[CanvasAnimation] 🔄 Restored element to original position after ' +
-                        anim.type + '/' + inOut + ' animation ended.');
+                        anim.type + '/' + inOut + ' animation ended. opacity=' + node.style.opacity);
         }, totalMs);
     }
 
     function _applyToNode(node, anim) {
         var css = _buildAnimationCSS(anim);
+
+        // Capture the element's configured opacity BEFORE the animation CSS is
+        // applied and potentially overwritten by keyframe fill-mode.  This value
+        // is set by each renderer (CanvasGif, CanvasImage, CanvasText, etc.) from
+        // the response data, so it may be less than 1.  We need it later to
+        // restore the correct opacity after zoom/peek/slide/pop/pan animations end.
+        var nodeOpacity = node.style.opacity !== '' ? parseFloat(node.style.opacity) : 1;
 
         // Always make the node visible when the animation is applied.
         // Renderers set visibility:hidden on animated elements immediately
@@ -325,8 +337,8 @@ var CanvasAnimation = (function () {
         // the final keyframe leaves the element invisible / off-screen because
         // animation-fill-mode "both" holds that last frame forever.
         // We schedule a restore so the element snaps back to its natural
-        // visible state once the animation is fully over.
-        _restoreNodeAfterAnimation(node, anim);
+        // visible state (with the correct response opacity) once the animation ends.
+        _restoreNodeAfterAnimation(node, anim, nodeOpacity);
 
         console.log('[CanvasAnimation] ✅ Applied "' + css + '" to',
                     node.getAttribute('data-element-id') ||

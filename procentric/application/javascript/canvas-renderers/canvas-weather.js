@@ -550,6 +550,13 @@ var CanvasWeather = (function() {
         var displayMode = el.weatherDisplayMode;
         var hasFlags    = el.showHumidity || el.showWindSpeed || el.showConditions || el.showVisibility;
 
+        // ── Text style flags ──
+        var domItalic    = el.textItalic    ? 'italic'    : 'normal';
+        var domShadow    = el.textShadow
+            ? ('2px 2px ' + (el.textShadowBlur || 4) + 'px ' + (el.textShadowColor || '#000000'))
+            : 'none';
+        var domUnderline = el.textUnderline; // boolean – applied selectively per mode below
+
         var ICO_HUMIDITY  = '&#128167;';          // 💧
         var ICO_WIND      = '&#128168;';          // 💨
         var ICO_EYE       = '&#128065;&#65039;';  // 👁️
@@ -569,27 +576,30 @@ var CanvasWeather = (function() {
                    ICO_PIN + '&nbsp;' + _escapeHtml(t) + '</div>';
         }
 
-        /* Standard detail row — flex so icon aligns with text */
-        function _row(icon, text, mb) {
+        /* Standard detail row — with optional underline applied to <span> text only */
+        function _row(icon, text, mb, applyUnderline) {
+            var ul = applyUnderline ? 'text-decoration:underline;' : '';
             return '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                   ';font-style:' + domItalic + ';text-shadow:' + domShadow +
                    ';white-space:nowrap;margin-bottom:' + (mb || 0) + 'px;' +
                    'display:flex;align-items:center;gap:8px;">' +
                    '<span style="flex-shrink:0;">' + icon + '</span>' +
-                   '<span>' + text + '</span></div>';
+                   '<span style="' + ul + '">' + text + '</span></div>';
         }
 
         if (displayMode === 'detailed') {
             /* ── MODE 1: detailed — mirrors renderDetailedWeather() ── */
             html += _titleHtml();
-            html += _row(_thermoImgTag(baseFontSize), tempValue + tempUnit, 6);
+            // detailed mode: textUnderline does NOT apply to temperature
+            html += _row(_thermoImgTag(baseFontSize), tempValue + tempUnit, 6, false);
             if (el.showConditions && data.conditions)
-                html += _row(ICO_CONDITION, _escapeHtml(data.conditions), 6);
+                html += _row(ICO_CONDITION, _escapeHtml(data.conditions), 6, domUnderline);
             if (el.showHumidity && typeof data.humidity !== 'undefined')
-                html += _row(ICO_HUMIDITY, 'Humidity: ' + data.humidity + '%', 6);
+                html += _row(ICO_HUMIDITY, 'Humidity: ' + data.humidity + '%', 6, domUnderline);
             if (el.showWindSpeed && typeof data.windSpeed !== 'undefined')
-                html += _row(ICO_WIND, 'Wind: ' + data.windSpeed + ' km/h', 6);
+                html += _row(ICO_WIND, 'Wind: ' + data.windSpeed + ' km/h', 6, domUnderline);
             if (el.showVisibility && typeof data.visibility !== 'undefined')
-                html += _row(ICO_EYE, 'Visibility: ' + data.visibility + ' km', 0);
+                html += _row(ICO_EYE, 'Visibility: ' + data.visibility + ' km', 0, false);
 
         } else if (hasFlags && (displayMode === 'simple' || !displayMode)) {
             /* ── MODE 2: 'simple' / inline — NO title, tight separator
@@ -600,10 +610,14 @@ var CanvasWeather = (function() {
             var iconSz  = Math.round(subFs * 0.9);
             var gapPx   = Math.max(2, Math.round(subFs * 0.18));
 
+            // simple mode: textUnderline → underline temperature
+            var tempUl = domUnderline ? 'text-decoration:underline;' : '';
+
             /* Row 1 — drawn weather condition icon + temperature */
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';font-style:' + domItalic + ';text-shadow:' + domShadow +
                     ';white-space:nowrap;margin-bottom:2px;display:flex;align-items:center;gap:6px;">' +
-                    ICO_CONDITION + '&nbsp;' + tempValue + tempUnit + '</div>';
+                    ICO_CONDITION + '&nbsp;<span style="' + tempUl + '">' + tempValue + tempUnit + '</span></div>';
 
             /* Row 2 — drawn icons for humidity and wind (replaces _dotSpan) */
             var parts = [];
@@ -626,10 +640,12 @@ var CanvasWeather = (function() {
 
         } else {
             /* ── MODE 3: compact — mirrors renderCompactWeather() ── */
+            var compTempUl = domUnderline ? 'text-decoration:underline;' : '';
             html += _titleHtml();
             html += '<div style="font-size:' + baseFontSize + 'px;font-weight:' + fw +
+                    ';font-style:' + domItalic + ';text-shadow:' + domShadow +
                     ';white-space:nowrap;display:flex;align-items:center;gap:6px;">' +
-                    ICO_CONDITION + '&nbsp;' + tempValue + tempUnit + '</div>';
+                    ICO_CONDITION + '&nbsp;<span style="' + compTempUl + '">' + tempValue + tempUnit + '</span></div>';
         }
 
         wrap.innerHTML = html;
@@ -768,6 +784,58 @@ var CanvasWeather = (function() {
         var baseFontSize = el.fontSize || 50;
         var iconSize = Math.round(baseFontSize * 0.85);
 
+        // ── Text style helpers ──────────────────────────────────────────
+        var isDetailed   = (el.weatherDisplayMode === 'detailed');
+        var useItalic    = !!el.textItalic;
+        var useShadow    = !!el.textShadow;
+        var shadowColor  = el.textShadowColor || '#000000';
+        var shadowBlur   = el.textShadowBlur  || 4;
+        var useUnderline = !!el.textUnderline;
+
+        /** Apply text shadow to ctx (call before fillText) */
+        function _applyShadow() {
+            if (useShadow) {
+                ctx.shadowColor = shadowColor;
+                ctx.shadowBlur  = shadowBlur;
+            }
+        }
+        /** Clear text shadow from ctx (call after fillText) */
+        function _clearShadow() {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur  = 0;
+        }
+
+        /**
+         * Draw an underline beneath text that was just painted.
+         * @param {number} textX   - x where the text string starts
+         * @param {number} middleY - baseline‑middle Y used with textBaseline:'middle'
+         * @param {string} text    - the string that was drawn (used for width measure)
+         * @param {number} fs      - font size in px
+         */
+        function _drawUnderline(textX, middleY, text, fs) {
+            var tw   = ctx.measureText(text).width;
+            var lineY = middleY + fs * 0.55;   // just below the glyph descenders
+            var lw    = Math.max(1, fs * 0.06);
+            ctx.save();
+            ctx.strokeStyle = el.textColor || el.color || '#FFFFFF';
+            ctx.lineWidth   = lw;
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur  = 0;
+            ctx.beginPath();
+            ctx.moveTo(textX, lineY);
+            ctx.lineTo(textX + tw, lineY);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        /** Build the font string for body text rows */
+        function _bodyFont(fs) {
+            return (el.textBold ? 'bold ' : '') +
+                   (useItalic ? 'italic ' : '') +
+                   (fs || baseFontSize) + 'px ' + (el.textFont || 'Arial');
+        }
+        // ────────────────────────────────────────────────────────────────
+
         if (el.showTitle && (el.titleLabel || data.location)) {
             var titleText = el.titleLabel || data.location || 'Location';
             var titleFontSize = el.titleFontSize || 20;
@@ -788,7 +856,7 @@ var CanvasWeather = (function() {
             currentY += titleFontSize + 15;
         }
 
-        ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
+        ctx.font      = _bodyFont();
         ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -797,44 +865,80 @@ var CanvasWeather = (function() {
             ? (el.unit === 'fahrenheit' ? data.temperature.fahrenheit : data.temperature.celsius)
             : '--';
         var tempUnit = el.unit === 'fahrenheit' ? '\u00b0F' : '\u00b0C';
+        var tempText = tempValue + tempUnit;
         var textMiddleY = currentY + baseFontSize / 2;
+        var tempTextX   = padding + iconSize + 12;
+
         drawIcon(ctx, 'thermometer', padding, textMiddleY - iconSize / 2, iconSize);
-        ctx.fillText(tempValue + tempUnit, padding + iconSize + 12, textMiddleY);
+        ctx.font = _bodyFont();
+        _applyShadow();
+        ctx.fillText(tempText, tempTextX, textMiddleY);
+        _clearShadow();
+
+        // In detailed mode: underline temperature only when textUnderline is true
+        //   (detailed-specific rows — humidity/condition/wind — are handled below)
+        // In non-detailed mode: underline temperature (handled in the other render fns)
+        if (useUnderline && isDetailed) {
+            // detailed mode → underline temperature is NOT underlined; only humidity/condition/wind are
+            // (temperature intentionally skipped — see below where the detailed rows are drawn)
+        } else if (useUnderline && !isDetailed) {
+            _drawUnderline(tempTextX, textMiddleY, tempText, baseFontSize);
+        }
+
         currentY += baseFontSize + 12;
 
         if (el.showConditions && data.conditions) {
             textMiddleY = currentY + baseFontSize / 2;
-            var condW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, textMiddleY, iconSize);
-            ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
+            var condW   = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, textMiddleY, iconSize);
+            var condTextX = padding + condW + 8;
+            ctx.font      = _bodyFont();
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
-            ctx.fillText(data.conditions, padding + condW + 8, textMiddleY);
+            _applyShadow();
+            ctx.fillText(data.conditions, condTextX, textMiddleY);
+            _clearShadow();
+            // detailed mode → underline condition
+            if (useUnderline && isDetailed) _drawUnderline(condTextX, textMiddleY, data.conditions, baseFontSize);
             currentY += baseFontSize + 10;
         }
 
         if (el.showHumidity && typeof data.humidity !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
-            var humW = drawCanvasIcon(ctx, 'droplet', padding, textMiddleY, iconSize);
-            ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
+            var humW    = drawCanvasIcon(ctx, 'droplet', padding, textMiddleY, iconSize);
+            var humText = 'Humidity: ' + data.humidity + '%';
+            var humTextX = padding + humW + 8;
+            ctx.font      = _bodyFont();
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
-            ctx.fillText('Humidity: ' + data.humidity + '%', padding + humW + 8, textMiddleY);
+            _applyShadow();
+            ctx.fillText(humText, humTextX, textMiddleY);
+            _clearShadow();
+            // detailed mode → underline humidity
+            if (useUnderline && isDetailed) _drawUnderline(humTextX, textMiddleY, humText, baseFontSize);
             currentY += baseFontSize + 10;
         }
 
         if (el.showWindSpeed && typeof data.windSpeed !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
-            var windW = drawCanvasIcon(ctx, 'wind', padding, textMiddleY, iconSize);
-            ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
+            var windW   = drawCanvasIcon(ctx, 'wind', padding, textMiddleY, iconSize);
+            var windText = 'Wind: ' + data.windSpeed + ' km/h';
+            var windTextX = padding + windW + 8;
+            ctx.font      = _bodyFont();
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
-            ctx.fillText('Wind: ' + data.windSpeed + ' km/h', padding + windW + 8, textMiddleY);
+            _applyShadow();
+            ctx.fillText(windText, windTextX, textMiddleY);
+            _clearShadow();
+            // detailed mode → underline wind speed
+            if (useUnderline && isDetailed) _drawUnderline(windTextX, textMiddleY, windText, baseFontSize);
             currentY += baseFontSize + 10;
         }
 
         if (el.showVisibility && typeof data.visibility !== 'undefined') {
             textMiddleY = currentY + baseFontSize / 2;
-            var visW = drawCanvasIcon(ctx, 'eye', padding, textMiddleY, iconSize);
-            ctx.font = (el.textBold ? 'bold ' : '') + baseFontSize + 'px ' + (el.textFont || 'Arial');
+            var visW    = drawCanvasIcon(ctx, 'eye', padding, textMiddleY, iconSize);
+            ctx.font      = _bodyFont();
             ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
+            _applyShadow();
             ctx.fillText('Visibility: ' + data.visibility + ' km', padding + visW + 8, textMiddleY);
+            _clearShadow();
         }
     }
 
@@ -857,15 +961,43 @@ var CanvasWeather = (function() {
             : '--';
         var tempUnit    = el.unit === 'fahrenheit' ? '\u00b0F' : '\u00b0C';
 
+        // ── Text style flags ──
+        var useItalic    = !!el.textItalic;
+        var useShadow    = !!el.textShadow;
+        var shadowColor  = el.textShadowColor || '#000000';
+        var shadowBlur   = el.textShadowBlur  || 4;
+        var useUnderline = !!el.textUnderline;
+
+        function _applyShadow() {
+            if (useShadow) { ctx.shadowColor = shadowColor; ctx.shadowBlur = shadowBlur; }
+        }
+        function _clearShadow() { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+        function _drawUnderline(textX, middleY, text, fs) {
+            var tw    = ctx.measureText(text).width;
+            var lineY = middleY + fs * 0.55;
+            ctx.save();
+            ctx.strokeStyle = el.textColor || el.color || '#FFFFFF';
+            ctx.lineWidth   = Math.max(1, fs * 0.06);
+            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.moveTo(textX, lineY); ctx.lineTo(textX + tw, lineY); ctx.stroke();
+            ctx.restore();
+        }
+
         ctx.textAlign    = 'left';
         ctx.textBaseline = 'middle';
 
         // ── Row 1: weather icon + large temperature ──
-        var row1CY = padding + iconSize / 2;
-        var wIconW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, row1CY, iconSize);
-        ctx.font      = (el.textBold ? 'bold ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
+        var row1CY    = padding + iconSize / 2;
+        var wIconW    = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, row1CY, iconSize);
+        var tempText  = tempValue + tempUnit;
+        var tempTextX = padding + wIconW + 8;
+        ctx.font      = (el.textBold ? 'bold ' : '') + (useItalic ? 'italic ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
         ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
-        ctx.fillText(tempValue + tempUnit, padding + wIconW + 8, row1CY);
+        _applyShadow();
+        ctx.fillText(tempText, tempTextX, row1CY);
+        _clearShadow();
+        // simple/inline mode: textUnderline → underline the temperature
+        if (useUnderline) _drawUnderline(tempTextX, row1CY, tempText, fontSize);
 
         // ── Row 2: compact strip ──
         var row2CY = padding + iconSize + 3 + subFontSize / 2;
@@ -945,13 +1077,37 @@ var CanvasWeather = (function() {
         var iconSize = Math.round(fontSize * 1.1);
         var centerY  = el.height / 2;
 
-        var wIconW = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, centerY, iconSize);
+        // ── Text style flags ──
+        var useItalic    = !!el.textItalic;
+        var useShadow    = !!el.textShadow;
+        var shadowColor  = el.textShadowColor || '#000000';
+        var shadowBlur   = el.textShadowBlur  || 4;
+        var useUnderline = !!el.textUnderline;
 
-        ctx.font      = (el.textBold ? 'bold ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
+        var wIconW   = drawCanvasWeatherIcon(ctx, data.weatherCode, padding, centerY, iconSize);
+        var tempText = tempValue + tempUnit;
+        var tempTextX = padding + wIconW + 10;
+
+        ctx.font      = (el.textBold ? 'bold ' : '') + (useItalic ? 'italic ' : '') + fontSize + 'px ' + (el.textFont || 'Arial');
         ctx.fillStyle = el.textColor || el.color || '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(tempValue + tempUnit, padding + wIconW + 10, centerY);
+
+        if (useShadow) { ctx.shadowColor = shadowColor; ctx.shadowBlur = shadowBlur; }
+        ctx.fillText(tempText, tempTextX, centerY);
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+
+        // compact/non-detailed: textUnderline → underline the temperature
+        if (useUnderline) {
+            var tw    = ctx.measureText(tempText).width;
+            var lineY = centerY + fontSize * 0.55;
+            ctx.save();
+            ctx.strokeStyle = el.textColor || el.color || '#FFFFFF';
+            ctx.lineWidth   = Math.max(1, fontSize * 0.06);
+            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.moveTo(tempTextX, lineY); ctx.lineTo(tempTextX + tw, lineY); ctx.stroke();
+            ctx.restore();
+        }
     }
 
     return { render: render, cleanup: cleanupWeather };

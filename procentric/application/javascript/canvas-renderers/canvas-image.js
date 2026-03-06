@@ -82,7 +82,7 @@ var CanvasImage = (function () {
         var h       = Math.ceil(el.height  || 0);
         var radius  = el.borderRadius || 0;
         var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
-        var fit     = el.objectFit || 'contain';
+        var fit     = el.objectFit || 'cover';
         var zIndex  = (el.zIndex != null && el.zIndex !== 'auto' && el.zIndex !== 0)
                       ? parseInt(el.zIndex, 10) || 10
                       : 10;
@@ -119,9 +119,28 @@ var CanvasImage = (function () {
             _domOverlays.push(bgDiv);
         }
 
-        /* Outer wrapper — clips border-radius and implements object-fit clipping.
-           overflow:hidden ensures the <img> is clipped to the element bounds,
-           mimicking what object-fit:contain/cover would do.                      */
+        /*
+         * SHADOW via CSS filter: drop-shadow() on wrap:
+         *
+         * CSS filter is applied AFTER the element is painted (including after
+         * overflow:hidden clipping), so drop-shadow() renders outside the
+         * clipped bounds and is never itself clipped — unlike box-shadow which
+         * is painted before overflow clipping and gets cut off.
+         *
+         * This also means the shadow automatically follows the element during
+         * CSS animations (slide, bounce, etc.) with zero extra work.
+         *
+         * This matches how CanvasText applies textShadow:
+         *   textShadow = '2px 2px <blur>px <color>'
+         * We use the equivalent for images:
+         *   filter: drop-shadow(2px 2px <blur>px <color>)
+         *
+         * Structure in container:
+         *   [wrap]  overflow:hidden (clips img) + filter:drop-shadow (shadow)
+         *     [img]
+         */
+
+        /* ── Outer wrapper — clips image, carries shadow + filters ─── */
         var wrap = document.createElement('div');
         wrap.setAttribute('data-canvas-image-id', String(el.id || el.name));
         wrap.style.position      = 'absolute';
@@ -137,6 +156,25 @@ var CanvasImage = (function () {
         wrap.style.opacity       = String(opacity);
         wrap.style.zIndex        = String(zIndex);
 
+        /* ── Build filter strings ──────────────────────────────────────
+           IMPORTANT: drop-shadow must be on wrap ONLY.
+           grayscale/sepia/blur must be on the <img> ONLY.
+           If both are on the same element, the colour filters desaturate
+           the shadow too — making a green shadowColor turn grey/sepia.
+           Separating them ensures shadowColor always renders as specified.
+
+           wrap  → drop-shadow(2px 2px 8px shadowColor)  [never desaturated]
+           img   → grayscale / sepia / blur               [affects image only]
+           -webkit- prefixes set for LG webOS compatibility.                */
+
+        if (el.dropShadow) {
+            var shadowCol  = el.shadowColor || 'rgba(0,0,0,0.6)';
+            var shadowBlur = 1;
+            var dropVal    = 'drop-shadow(2px 2px ' + shadowBlur + 'px ' + shadowCol + ')';
+            wrap.style.webkitFilter = dropVal;
+            wrap.style.filter       = dropVal;
+        }
+
         if (el.rotation && el.rotation !== 0) {
             var rot = 'rotate(' + el.rotation + 'deg)';
             wrap.style.webkitTransform       = rot;
@@ -145,7 +183,7 @@ var CanvasImage = (function () {
             wrap.style.transformOrigin       = 'center center';
         }
 
-        /* Inner <img> — starts filling the box; corrected on load */
+        /* ── Inner <img> — sized/positioned once natural dims are known */
         var img = document.createElement('img');
         img.setAttribute('data-canvas-image-img', String(el.id || el.name));
         img.style.position      = 'absolute';
@@ -162,6 +200,19 @@ var CanvasImage = (function () {
         /* GPU-composited layer hint — reduces tearing on LG webOS */
         img.style.webkitTransform = 'translate3d(0,0,0)';
         img.style.transform       = 'translate3d(0,0,0)';
+
+        /* ── Image-only filters (grayscale / sepia / blur) ────────────
+           Applied on <img> directly — separate from wrap's drop-shadow —
+           so the shadow colour is never desaturated by these filters.    */
+        var imgFilters = [];
+        if (el.grayscale) { imgFilters.push('grayscale(100%)'); }
+        if (el.sepia)     { imgFilters.push('sepia(100%)');     }
+        if (el.blur)      { imgFilters.push('blur(6px)');       }
+        if (imgFilters.length > 0) {
+            var imgFilterStr = imgFilters.join(' ');
+            img.style.webkitFilter = imgFilterStr;
+            img.style.filter       = imgFilterStr;
+        }
 
         img.addEventListener('load', function () {
             /* Recompute geometry now we know the natural image dimensions */
@@ -190,8 +241,8 @@ var CanvasImage = (function () {
         });
 
         img.src = el.src;
-
         wrap.appendChild(img);
+
         // Hide until animation fires (prevents flash at natural position on first load)
         if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
             wrap.style.visibility = 'hidden';

@@ -27,6 +27,16 @@ var CanvasSlideshow = (function() {
             return;
         }
 
+        // ANIMATION ENABLED (color/image bg): also render as DOM overlay so that
+        // CanvasAnimation can find the data-canvas-ss-id node and apply CSS animations.
+        // Without a DOM node, _findOverlayNodes() returns nothing and the animation
+        // is lost — only a transparent invisible fallback div is created instead.
+        if (element.animation && element.animation.enabled &&
+            element.animation.type && element.animation.type !== 'none') {
+            _renderAsDomSlideshow(element);
+            return;
+        }
+
         // Validate slides
         if (!element.slides || !Array.isArray(element.slides) || element.slides.length === 0) {
             console.error('[CanvasSlideshow] ❌ NO SLIDES FOUND!');

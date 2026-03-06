@@ -169,29 +169,38 @@ var CanvasTicker = (function() {
         
         console.log('[CanvasTicker] Creating content with speed:', speed, 'direction:', direction);
         
-        // Build ticker content HTML - each item with title above text
+        // Determine if this is a vertical direction
+        var isVertical = (direction === 'up' || direction === 'down');
+
+        // Build ticker content HTML
         var tickerContent = '';
         for (var i = 0; i < enabledItems.length; i++) {
             var item = enabledItems[i];
-            
+
             tickerContent += '<div class="ticker-item" style="';
-            tickerContent += 'display: inline-flex; ';
-            tickerContent += 'flex-direction: column; ';
-            tickerContent += 'justify-content: center; ';
-            tickerContent += 'align-items: flex-start; ';
-            tickerContent += 'margin-right: ' + spacing + 'px; ';
-            tickerContent += 'vertical-align: middle; ';
-            tickerContent += 'white-space: nowrap;';
-            tickerContent += 'height: 100%;'; // Take full height of ticker
-            tickerContent += '">';
-            
-            // Title container (top)
-            if (item.title) {
-                tickerContent += '<div style="';
+            if (isVertical) {
+                // Vertical: block layout, full width, with bottom margin as spacing
                 tickerContent += 'display: block; ';
-                tickerContent += 'line-height: 1.2;';
-                tickerContent += '">';
-                
+                tickerContent += 'width: 100%; ';
+                tickerContent += 'padding: 4px 8px; ';
+                tickerContent += 'box-sizing: border-box; ';
+                tickerContent += 'margin-bottom: ' + spacing + 'px; ';
+            } else {
+                // Horizontal: inline-flex, full height, with right margin as spacing
+                tickerContent += 'display: inline-flex; ';
+                tickerContent += 'flex-direction: column; ';
+                tickerContent += 'justify-content: center; ';
+                tickerContent += 'align-items: flex-start; ';
+                tickerContent += 'margin-right: ' + spacing + 'px; ';
+                tickerContent += 'vertical-align: middle; ';
+                tickerContent += 'white-space: nowrap; ';
+                tickerContent += 'height: 100%; ';
+            }
+            tickerContent += '">';
+
+            // Title
+            if (item.title) {
+                tickerContent += '<div style="display: block; line-height: 1.2;">';
                 tickerContent += '<span style="';
                 tickerContent += 'color: ' + titleColor + '; ';
                 tickerContent += 'font-size: ' + titleSize + 'px; ';
@@ -201,19 +210,12 @@ var CanvasTicker = (function() {
                 tickerContent += 'text-decoration: ' + (el.titleUnderline ? 'underline' : 'none') + ';';
                 tickerContent += '">';
                 tickerContent += escapeHtml(item.title);
-                tickerContent += '</span>';
-                
-                tickerContent += '</div>';
+                tickerContent += '</span></div>';
             }
-            
-            // Text container (below title)
+
+            // Text (below title)
             if (item.text) {
-                tickerContent += '<div style="';
-                tickerContent += 'display: block; ';
-                tickerContent += 'line-height: 1.2;';
-                tickerContent += 'margin-top: ' + (el.textSpacing || 4) + 'px;'; // Add spacing between title and text
-                tickerContent += '">';
-                
+                tickerContent += '<div style="display: block; line-height: 1.2; margin-top: ' + (el.textSpacing || 4) + 'px;">';
                 tickerContent += '<span style="';
                 tickerContent += 'color: ' + textColor + '; ';
                 tickerContent += 'font-size: ' + textSize + 'px; ';
@@ -223,61 +225,98 @@ var CanvasTicker = (function() {
                 tickerContent += 'text-decoration: ' + (el.textUnderline ? 'underline' : 'none') + ';';
                 tickerContent += '">';
                 tickerContent += escapeHtml(item.text);
-                tickerContent += '</span>';
-                
-                tickerContent += '</div>';
+                tickerContent += '</span></div>';
             }
-            
+
             tickerContent += '</div>';
         }
-        
-        // Add a separator/spacer after the content
-        tickerContent += '<div style="display: inline-block; width: ' + (spacing * 3) + 'px; height: 100%;"></div>';
-        
+
+        // Add trailing spacer
+        if (isVertical) {
+            tickerContent += '<div style="display: block; width: 100%; height: ' + (spacing * 3) + 'px;"></div>';
+        } else {
+            tickerContent += '<div style="display: inline-block; width: ' + (spacing * 3) + 'px; height: 100%;"></div>';
+        }
+
         // Repeat content 4 times for smooth looping
         var fullContent = tickerContent + tickerContent + tickerContent + tickerContent;
-        
+
         // Calculate animation duration based on speed
         // Speed 1 = 50 seconds, Speed 10 = 5 seconds
         var baseDuration = 50;
         var duration = (baseDuration / speed);
-        
+
         console.log('[CanvasTicker] Animation duration:', duration, 'seconds');
-        
+
         // Create unique animation name
         var animationName = 'ticker-scroll-' + elementId.toString().replace(/\./g, '_');
-        
+
+        // Build wrapper style based on direction
+        var wrapperStyle = 'position: absolute; ';
+
+        if (isVertical) {
+            // Vertical directions: wrapper spans full width, animates top
+            wrapperStyle += 'left: 0; ';
+            wrapperStyle += 'width: 100%; ';
+            if (direction === 'up') {
+                wrapperStyle += 'top: 100%; ';    // Start below the ticker
+            } else {
+                wrapperStyle += 'top: -100%; ';   // Start above the ticker
+            }
+            wrapperStyle += 'display: block; ';
+        } else {
+            // Horizontal directions: wrapper spans full height, animates left
+            wrapperStyle += 'top: 0; ';
+            wrapperStyle += 'height: 100%; ';
+            if (direction === 'left' || direction === 'right-to-left') {
+                wrapperStyle += 'left: 100%; ';   // Start from right edge
+            } else {
+                // direction === 'right' or 'left-to-right'
+                wrapperStyle += 'left: -100%; ';  // Start from left edge
+            }
+            wrapperStyle += 'display: inline-flex; ';
+            wrapperStyle += 'align-items: center; ';
+            wrapperStyle += 'white-space: nowrap; ';
+        }
+
+        wrapperStyle += 'animation: ' + animationName + ' ' + duration + 's linear infinite;';
+
         // Create the HTML structure
         var html = '<div style="position: relative; width: 100%; height: 100%; overflow: hidden;">';
-        html += '<div class="ticker-wrapper" style="';
-        html += 'position: absolute; ';
-        html += 'left: 100%; '; // Start from right edge
-        html += 'top: 0; ';
-        html += 'height: 100%; ';
-        html += 'display: inline-flex; ';
-        html += 'align-items: center; ';
-        html += 'white-space: nowrap; ';
-        html += 'animation: ' + animationName + ' ' + duration + 's linear infinite;';
-        html += '">';
+        html += '<div class="ticker-wrapper" style="' + wrapperStyle + '">';
         html += fullContent;
         html += '</div>';
         html += '</div>';
-        
+
         // Add keyframes animation
         var styleId = 'ticker-animation-style-' + elementId.toString().replace(/\./g, '_');
         var style = document.createElement('style');
         style.id = styleId;
-        
-        if (direction === 'left' || direction === 'right-to-left') {
-            // Right to left animation
-            style.textContent = 
+
+        if (direction === 'up') {
+            // Bottom to top
+            style.textContent =
+                '@keyframes ' + animationName + ' {' +
+                '    from { top: 100%; }' +
+                '    to { top: -100%; }' +
+                '}';
+        } else if (direction === 'down') {
+            // Top to bottom
+            style.textContent =
+                '@keyframes ' + animationName + ' {' +
+                '    from { top: -100%; }' +
+                '    to { top: 100%; }' +
+                '}';
+        } else if (direction === 'left' || direction === 'right-to-left') {
+            // Right to left
+            style.textContent =
                 '@keyframes ' + animationName + ' {' +
                 '    from { left: 100%; }' +
                 '    to { left: -100%; }' +
                 '}';
         } else {
-            // Left to right animation
-            style.textContent = 
+            // direction === 'right' or 'left-to-right' — Left to right
+            style.textContent =
                 '@keyframes ' + animationName + ' {' +
                 '    from { left: -100%; }' +
                 '    to { left: 100%; }' +
