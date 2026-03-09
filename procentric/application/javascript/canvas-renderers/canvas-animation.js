@@ -251,7 +251,11 @@ var CanvasAnimation = (function () {
         if (id)   push(document.querySelector('[data-canvas-shape-id="' + id   + '"]'));
         if (name && name !== id) push(document.querySelector('[data-canvas-shape-id="' + name + '"]'));
 
-        // CanvasTicker: id="ticker-overlay-{elementId}"
+        // CanvasTicker: data-canvas-ticker-id (outer overlay — animate body, not inner scroll wrapper)
+        if (id)   push(document.querySelector('[data-canvas-ticker-id="' + id   + '"]'));
+        if (name && name !== id) push(document.querySelector('[data-canvas-ticker-id="' + name + '"]'));
+
+        // CanvasTicker: id="ticker-overlay-{elementId}" (legacy fallback)
         if (id)   push(document.getElementById('ticker-overlay-' + id));
         if (name && name !== id) push(document.getElementById('ticker-overlay-' + name));
 

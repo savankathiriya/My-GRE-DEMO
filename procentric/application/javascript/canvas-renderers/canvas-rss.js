@@ -3,43 +3,80 @@
  * CANVAS RSS FEED RENDERER
  * Displays RSS feed items with title and description
  * Uses HTML overlay for RSS content display
+ *
+ * ANIMATION FIX:
+ *   Previously canvas placeholder (fillRect) was drawn for color/image
+ *   backgrounds even when animation was enabled, causing a ghost element
+ *   at the natural position before the animation fired.
+ *
+ *   Fix mirrors canvas-action.js / canvas-gif.js approach:
+ *   1. Skip canvas draw whenever animation is enabled OR backgroundType
+ *      is video/image (DOM overlay handles all rendering in those cases).
+ *   2. Set visibility:hidden on the overlay immediately after creation.
+ *   3. Call applyAnimation() AFTER the overlay is appended to the DOM
+ *      (double-rAF inside CanvasAnimation ensures first painted frame
+ *      is the animation start frame — no flash at natural position).
  * ====================================================================
  */
 
 var CanvasRss = (function () {
   "use strict";
 
-  var rssOverlays = {}; // Store RSS overlay elements
-  var rssFeedCache = {}; // Cache feed data
+  var rssOverlays   = {}; // Store RSS overlay elements
+  var rssFeedCache  = {}; // Cache feed data
   var fetchingFeeds = {}; // Track ongoing fetches
 
-  function _isVideoBg() {
+  // ── Background-type helpers (mirrors canvas-action.js) ────────────
+
+  function _getBgType() {
     try {
       var tj = Main.jsonTemplateData && Main.jsonTemplateData.template_json;
-      return !!(tj && tj.canvas && tj.canvas.backgroundType === "video");
+      return (tj && tj.canvas && tj.canvas.backgroundType) || "color";
     } catch (e) {
-      return false;
+      return "color";
     }
   }
 
+  function _isVideoBg() { return _getBgType() === "video"; }
+  function _isImageBg() { return _getBgType() === "image"; }
+
+  function _hasAnimation(el) {
+    return !!(
+      el.animation &&
+      el.animation.enabled &&
+      el.animation.type &&
+      el.animation.type !== "none"
+    );
+  }
+
+  // ── PUBLIC: render() ──────────────────────────────────────────────
+
   function render(ctx, el, canvas) {
     if (!el.feedUrl) {
-      console.warn(
-        "[CanvasRss] RSS element missing feedUrl:",
-        el.name || el.id,
-      );
+      console.warn("[CanvasRss] RSS element missing feedUrl:", el.name || el.id);
       return;
     }
 
-    console.log(
-      "[CanvasRss] Rendering RSS feed:",
-      el.name || el.id,
-      el.feedUrl,
-    );
+    console.log("[CanvasRss] Rendering RSS feed:", el.name || el.id, el.feedUrl);
 
-    // VIDEO BACKGROUND: skip canvas placeholder draw entirely — it would block the video.
-    // The DOM overlay (createRssOverlay) handles all visual rendering.
-    if (!_isVideoBg()) {
+    /*
+     * Canvas placeholder draw decision (mirrors canvas-action.js logic):
+     *
+     *  SKIP when:
+     *   - backgroundType === "video"  → canvas must stay transparent
+     *   - backgroundType === "image"  → bg image covers canvas; ghost rect
+     *                                   appears behind the animated overlay
+     *   - animation is enabled        → the DOM overlay IS the visual;
+     *                                   the canvas fillRect creates a ghost
+     *                                   at the natural position before the
+     *                                   animation fires (visible flash).
+     *
+     *  DRAW only when there is NO animation AND bg is plain color, to give
+     *  a solid color fallback behind the overlay while content loads.
+     */
+    var skipCanvasDraw = _isVideoBg() || _isImageBg() || _hasAnimation(el);
+
+    if (!skipCanvasDraw) {
       ctx.save();
       CanvasBase.applyTransformations(ctx, el);
       if (el.backgroundColor && el.backgroundColor !== "transparent") {
@@ -49,9 +86,10 @@ var CanvasRss = (function () {
       ctx.restore();
     }
 
-    // Create or update HTML overlay for RSS content
     createRssOverlay(el, canvas);
   }
+
+  // ── createRssOverlay() ────────────────────────────────────────────
 
   function createRssOverlay(el, canvas) {
     var elementId = el.id || el.name || "rss-" + Math.random();
@@ -59,7 +97,6 @@ var CanvasRss = (function () {
     if (!canvas) {
       canvas = document.getElementById("templateCanvas");
     }
-
     if (!canvas) {
       console.error("[CanvasRss] Canvas element not found");
       return;
@@ -68,7 +105,12 @@ var CanvasRss = (function () {
     var container = canvas.parentElement;
     if (!container) return;
 
-    // Remove old overlay if exists
+    // Ensure container is a positioning context (mirrors canvas-gif.js)
+    if (!container.style.position || container.style.position === "static") {
+      container.style.position = "relative";
+    }
+
+    // Remove stale overlay if exists
     if (rssOverlays[elementId]) {
       try {
         if (rssOverlays[elementId].parentNode) {
@@ -79,115 +121,112 @@ var CanvasRss = (function () {
       }
     }
 
-    // Create new overlay
+    // ── Build overlay div ────────────────────────────────────────────
     var overlay = document.createElement("div");
-    overlay.id = "rss-overlay-" + elementId;
+    overlay.id        = "rss-overlay-" + elementId;
     overlay.className = "rss-overlay";
-    // Hide until animation fires (prevents flash at natural position on first load)
-    if (
-      el.animation &&
-      el.animation.enabled &&
-      el.animation.type &&
-      el.animation.type !== "none"
-    ) {
+
+    // Scale: only needed when canvas CSS size differs from pixel size
+    var scaleX = 1, scaleY = 1;
+    try {
+      var canvasRect = canvas.getBoundingClientRect();
+      if (Math.abs(canvasRect.width - canvas.width) > 2) {
+        scaleX = canvasRect.width  / canvas.width;
+        scaleY = canvasRect.height / canvas.height;
+      }
+    } catch (e) { /* use 1:1 */ }
+
+    overlay.style.position        = "absolute";
+    overlay.style.left            = (el.x      * scaleX) + "px";
+    overlay.style.top             = (el.y      * scaleY) + "px";
+    overlay.style.width           = (el.width  * scaleX) + "px";
+    overlay.style.height          = (el.height * scaleY) + "px";
+    overlay.style.backgroundColor = el.backgroundColor || "transparent";
+    overlay.style.overflow        = "hidden";  // no scrollbar
+    overlay.style.overflowY       = "hidden";  // explicitly no vertical scroll
+    overlay.style.pointerEvents   = "none";
+    overlay.style.zIndex          = "100";
+    overlay.style.padding         = "10px";
+    overlay.style.boxSizing       = "border-box";
+
+    /*
+     * HIDE immediately when animation is enabled.
+     * CanvasAnimation._applyToNode() sets visibility:visible when the
+     * animation actually starts (after double-rAF), so the very first
+     * painted frame the user sees is the animation start frame.
+     * This prevents the "element flashes at natural position" issue that
+     * was happening on color/image backgrounds.
+     * Mirrors the pattern in canvas-gif.js and canvas-image.js.
+     */
+    if (_hasAnimation(el)) {
       overlay.style.visibility = "hidden";
     }
+
+    // ── Append to DOM FIRST — animation targeting requires the node ──
+    // (same reason canvas-gif.js appends before calling applyAnimation)
     container.appendChild(overlay);
     rssOverlays[elementId] = overlay;
 
-    // Apply CSS animation if configured on this element
-    if (
-      el.animation &&
-      el.animation.enabled &&
-      el.animation.type &&
-      el.animation.type !== "none"
-    ) {
-      if (
-        typeof CanvasAnimation !== "undefined" &&
-        CanvasAnimation.applyAnimation
-      ) {
+    /*
+     * Apply animation immediately after the element is in the DOM.
+     * The animation fires while "RSS Loading..." is shown, so the slide/
+     * fade plays as the widget appears — identical to how video bg works.
+     * CanvasAnimation internally uses double-rAF so the browser has
+     * painted the hidden element before the CSS animation is assigned.
+     */
+    if (_hasAnimation(el)) {
+      if (typeof CanvasAnimation !== "undefined" && CanvasAnimation.applyAnimation) {
         CanvasAnimation.applyAnimation(el, canvas);
       }
     }
 
-    // Calculate position.
-    // el.x/y/width/height are already in screen pixels (CanvasScaler has run).
-    // The canvas is position:absolute inside the container, so canvas pixels
-    // map 1:1 to container-relative pixels — no scale factor needed.
-    var scaleX = 1,
-      scaleY = 1;
-    try {
-      var canvasRect = canvas.getBoundingClientRect();
-      // Only apply scale if canvas CSS size differs from its pixel size
-      // (e.g. legacy non-CanvasScaler path)
-      if (Math.abs(canvasRect.width - canvas.width) > 2) {
-        scaleX = canvasRect.width / canvas.width;
-        scaleY = canvasRect.height / canvas.height;
-      }
-    } catch (e) {
-      /* use 1:1 */
-    }
-
-    overlay.style.position = "absolute";
-    overlay.style.left = el.x * scaleX + "px";
-    overlay.style.top = el.y * scaleY + "px";
-    overlay.style.width = el.width * scaleX + "px";
-    overlay.style.height = el.height * scaleY + "px";
-    overlay.style.backgroundColor = el.backgroundColor || "transparent";
-    overlay.style.overflow = "hidden";
-    overlay.style.overflowY = "auto";
-    overlay.style.pointerEvents = "none";
-    overlay.style.zIndex = "100";
-    overlay.style.padding = "10px";
-    overlay.style.boxSizing = "border-box";
-
-    // Check cache first
+    // ── Load content ──────────────────────────────────────────────────
     if (rssFeedCache[el.feedUrl]) {
       console.log("[CanvasRss] Using cached feed data");
       displayRssItems(el, overlay, rssFeedCache[el.feedUrl]);
     } else {
-      // Fetch and display RSS feed
       fetchAndDisplayRss(el, overlay);
     }
   }
 
+  // ── fetchAndDisplayRss() ──────────────────────────────────────────
+
   function fetchAndDisplayRss(el, overlay) {
-    // Prevent duplicate fetches
     if (fetchingFeeds[el.feedUrl]) {
       console.log("[CanvasRss] Already fetching this feed");
       return;
     }
-
     fetchingFeeds[el.feedUrl] = true;
 
-    // Show loading state
+    // Styled "RSS Loading..." shown while data is being fetched
+    var loadingFontSize = el.fontSize || 14;
     overlay.innerHTML =
-      '<div style="color: ' +
-      (el.titleColor || "#000000") +
-      '; font-family: Arial; font-size: 14px; text-align: center; padding: 20px;">Loading RSS feed...</div>';
+      '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">' +
+        '<span style="' +
+          'color:'         + (el.titleColor || "#000000") + ";" +
+          "font-family:Arial,sans-serif;" +
+          "font-size:"     + loadingFontSize + "px;" +
+          "font-weight:bold;" +
+          "letter-spacing:1px;" +
+        '">RSS Loading...</span>' +
+      "</div>";
 
-    // Use RSS2JSON API as a free CORS proxy
     var proxyUrl =
       "https://api.rss2json.com/v1/api.json?rss_url=" +
       encodeURIComponent(el.feedUrl);
 
     var xhr = new XMLHttpRequest();
     xhr.open("GET", proxyUrl, true);
-    xhr.timeout = 15000; // 15 second timeout
+    xhr.timeout = 15000;
 
     xhr.onload = function () {
       fetchingFeeds[el.feedUrl] = false;
-
       if (xhr.status === 200) {
         try {
           var data = JSON.parse(xhr.responseText);
           if (data.status === "ok" && data.items) {
-            console.log(
-              "[CanvasRss] ✅ Fetched",
-              data.items.length,
-              "items from feed",
-            );
-            rssFeedCache[el.feedUrl] = data.items; // Cache the data
+            console.log("[CanvasRss] ✅ Fetched", data.items.length, "items from feed");
+            rssFeedCache[el.feedUrl] = data.items;
             displayRssItems(el, overlay, data.items);
           } else {
             console.error("[CanvasRss] Invalid feed response:", data);
@@ -218,9 +257,11 @@ var CanvasRss = (function () {
     xhr.send();
   }
 
+  // ── displayRssItems() ─────────────────────────────────────────────
+
   function displayRssItems(el, overlay, items) {
-    var maxItems = el.maxItems || 5;
-    var fontSize = el.fontSize || 14;
+    var maxItems    = el.maxItems    || 5;
+    var fontSize    = el.fontSize    || 14;
     var itemSpacing = el.itemSpacing || 10;
 
     var html = "";
@@ -228,34 +269,26 @@ var CanvasRss = (function () {
 
     for (var i = 0; i < displayItems.length; i++) {
       var item = displayItems[i];
+      html += '<div style="margin-bottom:' + itemSpacing + 'px;">';
 
-      html += '<div style="margin-bottom: ' + itemSpacing + 'px;">';
-
-      // Title
       if (el.showTitle !== false && item.title) {
         html +=
-          '<div style="color: ' +
-          (el.titleColor || "#000000") +
-          "; font-size: " +
-          fontSize +
-          'px; font-weight: bold; font-family: Arial; margin-bottom: 4px; line-height: 1.3;">';
-        html += escapeHtml(item.title);
-        html += "</div>";
+          '<div style="color:' + (el.titleColor || "#000000") +
+          ";font-size:"        + fontSize +
+          'px;font-weight:bold;font-family:Arial;margin-bottom:4px;line-height:1.3;">' +
+          escapeHtml(item.title) +
+          "</div>";
       }
 
-      // Description
       if (el.showDescription !== false && item.description) {
         var cleanDesc = stripHtml(item.description).substring(0, 150);
         if (item.description.length > 150) cleanDesc += "...";
-
         html +=
-          '<div style="color: ' +
-          (el.descriptionColor || "#666666") +
-          "; font-size: " +
-          (fontSize - 2) +
-          'px; font-family: Arial; line-height: 1.4;">';
-        html += escapeHtml(cleanDesc);
-        html += "</div>";
+          '<div style="color:' + (el.descriptionColor || "#666666") +
+          ";font-size:"        + (fontSize - 2) +
+          'px;font-family:Arial;line-height:1.4;">' +
+          escapeHtml(cleanDesc) +
+          "</div>";
       }
 
       html += "</div>";
@@ -265,9 +298,11 @@ var CanvasRss = (function () {
     console.log("[CanvasRss] ✅ Displayed", displayItems.length, "RSS items");
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────
+
   function showError(overlay, message) {
     overlay.innerHTML =
-      '<div style="color: #cc0000; font-family: Arial; font-size: 12px; padding: 10px;">' +
+      '<div style="color:#cc0000;font-family:Arial;font-size:12px;padding:10px;">' +
       escapeHtml(message) +
       "</div>";
   }
@@ -279,22 +314,14 @@ var CanvasRss = (function () {
   }
 
   function escapeHtml(text) {
-    var map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return text.replace(/[&<>"']/g, function (m) {
-      return map[m];
-    });
+    var map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
+    return text.replace(/[&<>"']/g, function (m) { return map[m]; });
   }
+
+  // ── cleanup() ─────────────────────────────────────────────────────
 
   function cleanup() {
     console.log("[CanvasRss] Cleaning up RSS overlays");
-
-    // Remove all overlays
     for (var id in rssOverlays) {
       if (rssOverlays.hasOwnProperty(id)) {
         var overlay = rssOverlays[id];
@@ -307,8 +334,7 @@ var CanvasRss = (function () {
         }
       }
     }
-
-    rssOverlays = {};
+    rssOverlays   = {};
     fetchingFeeds = {};
     // Keep cache for reuse: rssFeedCache = {};
   }
@@ -319,8 +345,8 @@ var CanvasRss = (function () {
   }
 
   return {
-    render: render,
-    cleanup: cleanup,
+    render:     render,
+    cleanup:    cleanup,
     clearCache: clearCache,
   };
 })();

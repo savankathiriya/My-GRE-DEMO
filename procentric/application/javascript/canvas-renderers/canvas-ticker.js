@@ -20,6 +20,11 @@ var CanvasTicker = (function() {
         } catch (e) { return false; }
     }
 
+    function _hasAnimation(el) {
+        return !!(el.animation && el.animation.enabled &&
+                  el.animation.type && el.animation.type !== 'none');
+    }
+
     function render(ctx, el, canvas) {
         if (!el.items || el.items.length === 0) {
             console.warn('[CanvasTicker] Ticker element missing items:', el.name || el.id);
@@ -28,9 +33,13 @@ var CanvasTicker = (function() {
         
         console.log('[CanvasTicker] Rendering ticker:', el.name || el.id, 'Speed:', el.speed);
 
-        // VIDEO BACKGROUND: skip all canvas draws — they block the video.
-        // The DOM overlay handles all visual rendering.
-        if (!_isVideoBg()) {
+        // When animation is enabled OR video/image background is active, skip ALL canvas
+        // drawing. The DOM overlay is the sole renderer in these cases.
+        // Drawing on canvas AND creating a DOM overlay causes the "dual / ghost at original
+        // position" bug: the canvas copy sits statically while the overlay animates in.
+        var skipCanvasDraw = _hasAnimation(el) || _isVideoBg();
+
+        if (!skipCanvasDraw) {
             ctx.save();
             CanvasBase.applyTransformations(ctx, el);
             
@@ -125,12 +134,23 @@ var CanvasTicker = (function() {
         overlay.style.overflow = 'hidden';
         overlay.style.pointerEvents = 'none';
         overlay.style.zIndex = '100';
+        overlay.setAttribute('data-canvas-ticker-id', String(elementId));
         
-        // Apply background
+        // Apply background — use rgba() for opacity so it only affects the bg colour,
+        // NOT the whole overlay (which would interfere with entry/exit animations and
+        // make text semi-transparent too).
         if (el.backgroundColor && el.backgroundColor !== 'transparent') {
-            overlay.style.backgroundColor = el.backgroundColor;
-            if (typeof el.backgroundOpacity !== 'undefined') {
-                overlay.style.opacity = el.backgroundOpacity;
+            var bgOpacity = (typeof el.backgroundOpacity !== 'undefined') ? el.backgroundOpacity : 1;
+            if (bgOpacity < 1) {
+                // Convert hex colour to rgba so only the background is semi-transparent
+                var hex = el.backgroundColor.replace('#', '');
+                if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+                var r = parseInt(hex.substring(0,2), 16);
+                var g = parseInt(hex.substring(2,4), 16);
+                var b = parseInt(hex.substring(4,6), 16);
+                overlay.style.backgroundColor = 'rgba(' + r + ',' + g + ',' + b + ',' + bgOpacity + ')';
+            } else {
+                overlay.style.backgroundColor = el.backgroundColor;
             }
         }
         
@@ -144,11 +164,11 @@ var CanvasTicker = (function() {
         
         // Create ticker content with delay to ensure DOM is ready
         setTimeout(function() {
-            createTickerContent(el, overlay, scaleX, scaleY, elementId);
+            createTickerContent(el, overlay, scaleX, scaleY, elementId, canvas);
         }, 100);
     }
     
-    function createTickerContent(el, overlay, scaleX, scaleY, elementId) {
+    function createTickerContent(el, overlay, scaleX, scaleY, elementId, canvas) {
         var enabledItems = el.items.filter(function(item) { return item.enabled !== false; });
         
         if (enabledItems.length === 0) {
@@ -279,7 +299,26 @@ var CanvasTicker = (function() {
             wrapperStyle += 'white-space: nowrap; ';
         }
 
-        wrapperStyle += 'animation: ' + animationName + ' ' + duration + 's linear infinite;';
+        // Calculate scroll animation delay: if an entry animation is configured,
+        // delay the ticker scroll until after the entry animation finishes.
+        // This ensures the whole ticker body (background + text) animates in as
+        // one unit before the internal scrolling begins.
+        var scrollDelay = 0;
+        var hasEntryAnim = el.animation && el.animation.enabled &&
+                           el.animation.type && el.animation.type !== 'none';
+        if (hasEntryAnim) {
+            var animDuration = el.animation.duration || 1000;
+            var animDelay    = el.animation.delay    || 0;
+            var inOut        = el.animation.inOut    || 'in';
+            // For 'both', entry is first half; for 'in' or 'out', it's the full duration.
+            if (inOut === 'both') {
+                scrollDelay = animDelay + Math.ceil(animDuration / 2) + 100;
+            } else {
+                scrollDelay = animDelay + animDuration + 100;
+            }
+        }
+
+        wrapperStyle += 'animation: ' + animationName + ' ' + duration + 's linear ' + scrollDelay + 'ms infinite;';
 
         // Create the HTML structure
         var html = '<div style="position: relative; width: 100%; height: 100%; overflow: hidden;">';
@@ -328,10 +367,12 @@ var CanvasTicker = (function() {
         
         overlay.innerHTML = html;
 
-        // Apply CSS entry/exit animation if configured on this element
+        // Apply CSS entry/exit animation to the whole ticker overlay (body + content)
+        // if configured on this element. The scroll animation above is already
+        // delayed so it only starts after the entry animation finishes.
         if (el.animation && el.animation.enabled && el.animation.type && el.animation.type !== 'none') {
             if (typeof CanvasAnimation !== 'undefined' && CanvasAnimation.applyAnimation) {
-                CanvasAnimation.applyAnimation(el, canvas);
+                CanvasAnimation.applyAnimation(el, canvas || document.getElementById('templateCanvas'));
             }
         }
 
