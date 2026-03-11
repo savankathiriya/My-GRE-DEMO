@@ -44,8 +44,15 @@ var CanvasRenderer = (function() {
         if (typeof CanvasGif !== 'undefined' && CanvasGif.cleanup) {
             CanvasGif.cleanup();
         }
+        // Clean up video overlays — resets primarySet so next render re-assigns primary
+        if (typeof CanvasVideo !== 'undefined' && CanvasVideo.cleanup) {
+            CanvasVideo.cleanup();
+        }
         if (typeof CanvasImage !== 'undefined' && CanvasImage.cleanup) {
             CanvasImage.cleanup();
+        }
+        if (typeof CanvasQr !== 'undefined' && CanvasQr.cleanup) {
+            CanvasQr.cleanup();
         }
         if (typeof CanvasText !== 'undefined' && CanvasText.cleanup) {
             CanvasText.cleanup();
@@ -317,7 +324,15 @@ var CanvasRenderer = (function() {
                 break;
                 
             case 'image':
-                CanvasImage.render(ctx, el);
+            case 'canvas-image':
+                /* If the element carries qrData, generate a QR code instead
+                   of treating it as a plain image.  Falls back to CanvasImage
+                   when qrData is absent (normal image behaviour).             */
+                if (typeof CanvasQr !== 'undefined' && CanvasQr.hasQrData(el)) {
+                    CanvasQr.render(ctx, el);
+                } else {
+                    CanvasImage.render(ctx, el);
+                }
                 break;
                 
             case 'gif':

@@ -140,6 +140,19 @@ var CanvasImage = (function () {
          *     [img]
          */
 
+        /* ── Border properties ────────────────────────────────────────
+           Apply border if borderWidth and borderColor are present.
+           borderStyle supports 'dotted' or 'dashed'; anything else
+           (including absent/null) falls back to 'solid'.
+           box-sizing: border-box keeps the element within w×h bounds
+           so the border is drawn inside and does not expand the box.  */
+        var borderWidth = (el.borderWidth && el.borderColor) ? parseInt(el.borderWidth, 10) || 0 : 0;
+        var borderColor = borderWidth > 0 ? (el.borderColor || 'transparent') : 'transparent';
+        var borderStyle = 'solid';
+        if (el.borderStyle === 'dotted' || el.borderStyle === 'dashed') {
+            borderStyle = el.borderStyle;
+        }
+
         /* ── Outer wrapper — clips image, carries shadow + filters ─── */
         var wrap = document.createElement('div');
         wrap.setAttribute('data-canvas-image-id', String(el.id || el.name));
@@ -148,6 +161,7 @@ var CanvasImage = (function () {
         wrap.style.pointerEvents = 'none';
         wrap.style.margin        = '0';
         wrap.style.padding       = '0';
+        wrap.style.boxSizing     = 'border-box';
         wrap.style.left          = x + 'px';
         wrap.style.top           = y + 'px';
         wrap.style.width         = w + 'px';
@@ -155,6 +169,15 @@ var CanvasImage = (function () {
         wrap.style.borderRadius  = radius + 'px';
         wrap.style.opacity       = String(opacity);
         wrap.style.zIndex        = String(zIndex);
+
+        /* Apply border when borderWidth and borderColor are provided */
+        if (borderWidth > 0) {
+            wrap.style.borderWidth = borderWidth + 'px';
+            wrap.style.borderStyle = borderStyle;
+            wrap.style.borderColor = borderColor;
+        } else {
+            wrap.style.border = 'none';
+        }
 
         /* ── Build filter strings ──────────────────────────────────────
            IMPORTANT: drop-shadow must be on wrap ONLY.

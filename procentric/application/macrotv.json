@@ -129,6 +129,10 @@
             "VersionNo": 0.1
         },
         {
+            "FileName": "javascript/canvas-renderers/canvas-qr.js",
+            "VersionNo": 0.1
+        },
+        {
             "FileName": "javascript/canvas-renderers/canvas-videoBgHelper.js",
             "VersionNo": 0.1
         }

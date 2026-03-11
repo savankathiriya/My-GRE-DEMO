@@ -10,6 +10,15 @@
  *  - HLS (.m3u8): <source type="application/x-mpegURL"> + watchdog loop
  *  - MP4: video.src + loop attribute + 'ended' fallback listener
  *  - cleanup() removes the overlay and stops the watchdog
+ *
+ * BG-VIDEO FIX:
+ *  When navigating from a page that had a normal video element,
+ *  hcap.video.setVideoSize() was previously called with that element's
+ *  small x/y/w/h.  CanvasVideo.cleanup() now resets the plane to full
+ *  screen, but as a belt-and-suspenders measure createBackgroundVideo()
+ *  also calls _resetHcapVideoSizeFullScreen() on both 'loadedmetadata'
+ *  and 'playing' events to guarantee the hardware decode plane covers
+ *  the entire screen before the first bg-video frame is rendered.
  * ====================================================================
  */
 
@@ -80,11 +89,26 @@ var CanvasBackground = (function () {
         CanvasBase.loadImage(
             imageUrl,
             function (img) {
+                /* LG webOS: reset ALL composite state explicitly inside the
+                   async callback -- the ctx may have been mutated by other
+                   draws between loadImage() call and this callback firing.  */
                 ctx.save();
-                ctx.globalAlpha = opacity;
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.shadowColor  = 'transparent';
+                ctx.shadowBlur   = 0;
+
+                /* Step 1: solid black base so canvas is never transparent */
+                ctx.globalAlpha = 1;
+                ctx.fillStyle   = '#000000';
+                ctx.fillRect(0, 0, width, height);
+
+                /* Step 2: draw image at backgroundOpacity */
+                ctx.globalAlpha = (typeof opacity === 'number') ? opacity : 1;
                 CanvasBase.drawImageWithFit(ctx, img, 0, 0, width, height, fit);
+
                 ctx.restore();
-                console.log('[CanvasBackground] Background image loaded OK');
+                console.log('[CanvasBackground] Background image drawn | opacity:', opacity);
             },
             function () {
                 console.warn('[CanvasBackground] Background image failed to load');
@@ -98,22 +122,39 @@ var CanvasBackground = (function () {
        Mirrors canvas-action.js createBackgroundVideo() exactly.
     ================================================================ */
     function createBackgroundVideo(config, screenW, screenH) {
-        /* Remove any previous background video first */
-        cleanupVideo();
-
         var src = (config.backgroundVideo || '').trim();
-        if (!src) return;
+        if (!src) { cleanupVideo(); return; }
 
-        /* Normalise protocol */
+        /* Normalise protocol early so we can compare against existing src */
         if (src.indexOf('http://') !== 0 && src.indexOf('https://') !== 0) {
             src = 'https://' + src;
         }
 
+        var opacity = typeof config.backgroundOpacity !== 'undefined'
+                      ? config.backgroundOpacity : 1;
+
+        /* ── If the same video is already playing, just update opacity ── */
+        if (_bgVideo && _bgVideoWrap &&
+            (_bgVideo.src === src ||
+             (_bgVideo.querySelector && (function () {
+                 var s = _bgVideo.querySelector('source');
+                 return s && s.src === src;
+             }())))) {
+            /* Update overlay div opacity (LG-safe dimming) */
+            var _ov = document.getElementById('bg-video-overlay');
+            if (_ov) {
+                _ov.style.opacity = String(Math.max(0, Math.min(1, 1 - opacity)));
+            }
+            console.log('[CanvasBackground] BG video already running -- opacity updated to', opacity);
+            return;
+        }
+
+        /* Remove any previous background video first */
+        cleanupVideo();
+
         var fitMode = config.backgroundFit        || 'cover';
         var doLoop  = config.backgroundVideoLoop  !== false;
         var muted   = config.backgroundVideoMuted !== false;
-        var opacity = typeof config.backgroundOpacity !== 'undefined'
-                      ? config.backgroundOpacity : 1;
         var isHls   = src.toLowerCase().indexOf('.m3u8') !== -1;
 
         console.log('[CanvasBackground] BG video src:', src,
@@ -133,7 +174,10 @@ var CanvasBackground = (function () {
         wrap.style.margin   = '0';
         wrap.style.padding  = '0';
         wrap.style.pointerEvents = 'none';
-        wrap.style.opacity  = String(opacity);
+        /* LG webOS: CSS opacity on a <div> containing <video> is unreliable.
+           Instead we lay a black <div> on top of the video with
+           opacity = (1 - backgroundOpacity) to simulate dimming.           */
+        wrap.style.opacity = '1';
 
         /* ── <video> element ───────────────────────────────────────── */
         var video              = document.createElement('video');
@@ -215,6 +259,12 @@ var CanvasBackground = (function () {
             console.log('[CanvasBackground] BG video metadata:',
                         video.videoWidth + 'x' + video.videoHeight);
             _applyVideoFit();
+            /* ── FIX: Reset hcap plane to full screen early ──────────────
+               A prior page's element video may have set the hardware plane
+               to a small rect via hcap.video.setVideoSize().  Reset it here
+               (before 'playing' fires) so the very first bg-video frame
+               uses the correct full-screen dimensions.                      */
+            _resetHcapVideoSizeFullScreen(screenW, screenH);
         });
 
         video.addEventListener('playing', function () {
@@ -222,6 +272,11 @@ var CanvasBackground = (function () {
             if (!started) {
                 started = true;
                 console.log('[CanvasBackground] BG video playing OK');
+                /* ── FIX: Belt-and-suspenders full-screen reset on first play ──
+                   Ensures the hcap hardware decode plane covers the full screen
+                   even if the 'loadedmetadata' reset fired before hcap was ready,
+                   or if CanvasVideo.cleanup() hasn't finished its async reset yet. */
+                _resetHcapVideoSizeFullScreen(screenW, screenH);
             }
         });
 
@@ -280,6 +335,20 @@ var CanvasBackground = (function () {
                         })();
 
         wrap.appendChild(video);
+
+        /* ── black opacity overlay (LG-safe dimming for video bg) ───────── */
+        var overlayDiv              = document.createElement('div');
+        overlayDiv.id               = 'bg-video-overlay';
+        overlayDiv.style.position   = 'absolute';
+        overlayDiv.style.top        = '0';
+        overlayDiv.style.left       = '0';
+        overlayDiv.style.width      = '100%';
+        overlayDiv.style.height     = '100%';
+        overlayDiv.style.background = '#000000';
+        overlayDiv.style.opacity    = String(Math.max(0, Math.min(1, 1 - opacity)));
+        overlayDiv.style.pointerEvents = 'none';
+        overlayDiv.style.zIndex     = '2';   /* above video (z-index:0 default) */
+        wrap.appendChild(overlayDiv);
 
         /* Insert BEFORE the canvas so the video sits behind it.
            The canvas will draw a transparent/dark rect for bgType=video,
@@ -344,6 +413,64 @@ var CanvasBackground = (function () {
             });
 
             video.addEventListener('emptied', _stopWatchdog);
+        }
+    }
+
+    /* ================================================================
+       _resetHcapVideoSizeFullScreen(sw, sh)
+       Sets the hcap hardware decode plane to cover the full screen
+       (0, 0, displayW, displayH).
+       Called from createBackgroundVideo() on 'loadedmetadata' and
+       'playing' so the plane is guaranteed to be full-screen whenever
+       a background video starts, regardless of what the previous page
+       may have set via CanvasVideo._applyVideoSize().
+    ================================================================ */
+    function _resetHcapVideoSizeFullScreen(sw, sh) {
+        if (!(window.hcap && hcap.video && typeof hcap.video.setVideoSize === 'function')) return;
+
+        sw = sw || window.innerWidth  || (window.screen && window.screen.width)  || 1920;
+        sh = sh || window.innerHeight || (window.screen && window.screen.height) || 1080;
+        console.log('[CanvasBackground] Resetting hcap video plane to full screen:', sw + 'x' + sh);
+
+        function _doSet(x, y, w, h) {
+            try {
+                hcap.video.setVideoSize({
+                    x: x, y: y, width: w, height: h,
+                    onSuccess: function () {
+                        console.log('[CanvasBackground] hcap setVideoSize full-screen OK:', w + 'x' + h);
+                    },
+                    onFailure: function (f) {
+                        console.warn('[CanvasBackground] hcap setVideoSize failed:', f && f.errorMessage);
+                    }
+                });
+            } catch (e) {
+                console.error('[CanvasBackground] hcap setVideoSize threw:', e);
+            }
+        }
+
+        /* Use display_resolution for physical pixel accuracy (matches canvas-video.js) */
+        if (window.hcap && hcap.property && hcap.property.getProperty) {
+            try {
+                hcap.property.getProperty({
+                    key: 'display_resolution',
+                    onSuccess: function (res) {
+                        var dw = sw, dh = sh;
+                        try {
+                            if (res && res.value) {
+                                var p = String(res.value).split('x');
+                                if (p.length === 2) {
+                                    dw = parseInt(p[0], 10) || dw;
+                                    dh = parseInt(p[1], 10) || dh;
+                                }
+                            }
+                        } catch (e) {}
+                        _doSet(0, 0, dw, dh);
+                    },
+                    onFailure: function () { _doSet(0, 0, sw, sh); }
+                });
+            } catch (e) { _doSet(0, 0, sw, sh); }
+        } else {
+            _doSet(0, 0, sw, sh);
         }
     }
 

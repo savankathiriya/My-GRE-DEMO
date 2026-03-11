@@ -235,6 +235,10 @@ var CanvasAnimation = (function () {
         if (id)   push(document.querySelector('[data-canvas-image-id="' + id   + '"]'));
         if (name && name !== id) push(document.querySelector('[data-canvas-image-id="' + name + '"]'));
 
+        // CanvasQr: data-canvas-qr-id (the outer wrap — same pattern as CanvasImage)
+        if (id)   push(document.querySelector('[data-canvas-qr-id="' + id   + '"]'));
+        if (name && name !== id) push(document.querySelector('[data-canvas-qr-id="' + name + '"]'));
+
         // CanvasText: data-canvas-text-id (the text div, not the bg div)
         if (id)   push(document.querySelector('[data-canvas-text-id="' + id   + '"]'));
         if (name && name !== id) push(document.querySelector('[data-canvas-text-id="' + name + '"]'));
@@ -347,6 +351,7 @@ var CanvasAnimation = (function () {
         console.log('[CanvasAnimation] ✅ Applied "' + css + '" to',
                     node.getAttribute('data-element-id') ||
                     node.getAttribute('data-canvas-image-id') ||
+                    node.getAttribute('data-canvas-qr-id') ||
                     node.getAttribute('data-canvas-text-id') ||
                     node.getAttribute('data-canvas-clock-id') ||
                     node.getAttribute('data-canvas-weather-id') ||

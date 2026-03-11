@@ -200,22 +200,77 @@ var CanvasText = (function() {
         return fontStyle + ' ' + fontWeight + ' ' + fontSize + 'px ' + fontFamily;
     }
 
+    /**
+     * Breaks text into lines that fit within maxWidth.
+     * Respects existing newline characters (\n) in the text.
+     */
+    function wrapText(ctx, text, maxWidth) {
+        var lines = [];
+        // Split on explicit newlines first
+        var paragraphs = text.split('\n');
+        for (var p = 0; p < paragraphs.length; p++) {
+            var words = paragraphs[p].split(' ');
+            var currentLine = '';
+            for (var w = 0; w < words.length; w++) {
+                var testLine = currentLine ? currentLine + ' ' + words[w] : words[w];
+                var testWidth = ctx.measureText(testLine).width;
+                if (testWidth > maxWidth && currentLine !== '') {
+                    lines.push(currentLine);
+                    currentLine = words[w];
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            lines.push(currentLine);
+        }
+        return lines;
+    }
+
     function drawStyledText(ctx, el, x, y) {
+        var padding     = el.backgroundPadding || 0;
+        var maxWidth    = el.width - (padding * 2);
+        var fontSize    = el.fontSize || 16;
+        var lineHeight  = fontSize * 1.4;
+
+        // Check if text needs wrapping
+        var singleLineWidth = ctx.measureText(el.text).width;
+        var needsWrap = singleLineWidth > maxWidth;
+
+        if (!needsWrap) {
+            // Single-line fast path (original behaviour)
+            CanvasBase.applyTextShadow(ctx, el);
+            if (el.textStroke) {
+                ctx.strokeStyle = el.textStrokeColor || '#000000';
+                ctx.lineWidth   = el.textStrokeWidth  || 1;
+                ctx.strokeText(el.text, x, y);
+            }
+            ctx.fillText(el.text, x, y);
+            CanvasBase.resetTextShadow(ctx);
+            if (el.textDecoration === 'underline') {
+                drawUnderline(ctx, el, x, y);
+            }
+            return;
+        }
+
+        // --- Multi-line word-wrap path ---
+        var lines      = wrapText(ctx, el.text, maxWidth);
+        var totalHeight = lines.length * lineHeight;
+        // Start Y so the block of lines is vertically centred in el.height
+        var startY     = (el.height / 2) - (totalHeight / 2) + (lineHeight / 2);
+
         CanvasBase.applyTextShadow(ctx, el);
 
-        if (el.textStroke) {
-            ctx.strokeStyle = el.textStrokeColor || '#000000';
-            ctx.lineWidth   = el.textStrokeWidth  || 1;
-            ctx.strokeText(el.text, x, y);
+        for (var i = 0; i < lines.length; i++) {
+            var lineY = startY + i * lineHeight;
+            if (el.textStroke) {
+                ctx.strokeStyle = el.textStrokeColor || '#000000';
+                ctx.lineWidth   = el.textStrokeWidth  || 1;
+                ctx.strokeText(lines[i], x, lineY);
+            }
+            ctx.fillText(lines[i], x, lineY);
         }
-
-        ctx.fillText(el.text, x, y);
 
         CanvasBase.resetTextShadow(ctx);
-
-        if (el.textDecoration === 'underline') {
-            drawUnderline(ctx, el, x, y);
-        }
     }
 
     function drawTextWithLetterSpacing(ctx, text, x, y, spacing, el, fontString) {
@@ -345,20 +400,25 @@ var CanvasText = (function() {
             _textDomOverlays.push(bgDiv);
         }
 
+        var bgPadding = el.backgroundPadding || 0;
+
         var div = document.createElement('div');
         div.setAttribute('data-canvas-text-id', elId);
-        div.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:hidden;box-sizing:border-box;';
-        div.style.left         = x + 'px';
-        div.style.top          = y + 'px';
-        div.style.width        = w + 'px';
-        div.style.height       = h + 'px';
-        div.style.opacity      = String(opacity);
-        div.style.zIndex       = String(zIndex);
-        div.style.display      = 'flex';
-        div.style.alignItems   = 'center';  // vertical center
-        div.style.paddingLeft  = paddingLeft + 'px';
-        div.style.paddingRight = paddingRight + 'px';
-        div.style.borderRadius = (el.borderRadius || 0) + 'px';
+        div.style.cssText = 'position:absolute;pointer-events:none;margin:0;overflow:visible;box-sizing:border-box;';
+        div.style.left          = x + 'px';
+        div.style.top           = y + 'px';
+        div.style.width         = w + 'px';
+        div.style.minHeight     = h + 'px';
+        div.style.height        = 'auto';
+        div.style.opacity       = String(opacity);
+        div.style.zIndex        = String(zIndex);
+        div.style.display       = 'flex';
+        div.style.alignItems    = 'center';
+        div.style.paddingLeft   = (paddingLeft  || bgPadding) + 'px';
+        div.style.paddingRight  = (paddingRight || bgPadding) + 'px';
+        div.style.paddingTop    = bgPadding + 'px';
+        div.style.paddingBottom = bgPadding + 'px';
+        div.style.borderRadius  = (el.borderRadius || 0) + 'px';
 
         if (el.rotation && el.rotation !== 0) {
             div.style.transform       = 'rotate(' + el.rotation + 'deg)';
@@ -368,7 +428,7 @@ var CanvasText = (function() {
 
         var span = document.createElement('span');
         span.textContent   = el.text;
-        span.style.cssText = 'display:block;width:100%;margin:0;padding:0;white-space:pre-wrap;word-break:break-word;';
+        span.style.cssText = 'display:block;width:100%;margin:0;padding:0;white-space:pre-wrap;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;';
         span.style.fontSize   = fontSize + 'px';
         span.style.fontFamily = fontFamily;
         span.style.fontWeight = fontWeight;
