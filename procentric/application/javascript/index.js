@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.502"
+	appVersion:"v1.670"
 };
 var loadFilePaths = 'macrotv.json';
 var scount = 0, mainCount = 0;
@@ -212,6 +212,12 @@ function startMacAcquisitionFlow() {
             try {
                 bindingAppsToPms();
             } catch (e) { console.warn("bindingAppsToPms error:", e); }
+
+            var res1 = JSON.parse(localStorage.getItem('lgLgChannelMetaDetails'));
+            var res2 = JSON.parse(localStorage.getItem('lgLgChannelIdDetails'));
+
+            console.log("presentPagedetails.lgLgChannelIdDetails---------------------------------------------->", res2)
+            console.log("presentPagedetails.lgLgChannelMetaDetails----------------------------------------------->", res1)
             try {
                 Main.deviceRegistrationAPi();
             } catch (e) { console.error("deviceRegistrationAPi error:", e); }
@@ -829,6 +835,109 @@ document.addEventListener('idcap::mpi_cable_status_changed', function(param) {
 
 function handleMqttCommand(cmd, data, topic) {
   console.log('[MQTT CMD] cmd:', cmd, '| topic:', topic, '| data:', JSON.stringify(data));
+
+    switch(cmd) {
+      case "checkout" : return mqtt_reboot();
+      case "checkin" : return mqtt_reboot();
+      case "reboot" : return mqtt_reboot();
+      case "refresh" : return mqtt_reboot();
+      case "refresh_app_data" : return mqtt_reboot();
+      case "take_screenshot" : return mqtt_takeScreenshot(data);
+    }
+ 
+  function mqtt_reboot() {
+    try {
+      hcap.power.reboot({
+        onSuccess: function() {
+          console.log("TV reboot initiated via MQTT command");
+        },
+        onFailure: function(f) {
+          console.warn("Failed to reboot TV via MQTT command:", f && f.errorMessage);
+        }
+      })
+    } catch (e) {
+      console.error("Exception while rebooting TV via MQTT command:", e);
+    }
+  }
+
+  function mqtt_takeScreenshot(data) {
+    if (!data || !data.put_presign_url) {
+      console.error("Missing put_presign_url in MQTT payload");
+      return;
+    }
+
+    // 1. Capture screen via IDCAP
+    idcap.request("idcap://utility/screen/capture", {
+      parameters: {
+        width: 1920,
+        height: 1080,
+        format: "PNG"
+      },
+      onSuccess: function (cbObject) {
+        var fileUri = cbObject.uri;
+        if (!fileUri) {
+          console.error("Screenshot URI is empty");
+          return;
+        }
+
+        fetch(fileUri)
+          .then(response => response.blob())
+          .then(function (blob) {
+            return fetch(data.put_presign_url, {
+              method: "PUT",
+               headers: {
+                "Content-Type": "image/png"
+              },
+              body: blob
+            });
+          })
+          .then(function (uploadRes) {
+            if (!uploadRes.ok) {
+              console.error("Failed to upload screenshot to presigned URL:", uploadRes.status);
+            }
+            sendScreenshotAck(data, fileUri);
+          })
+          .catch(function (err) {
+            console.error("Screenshot upload error:", err);
+          })
+      },
+      onFailure: function (err) {
+        console.error("Screen capture failed:", err);
+      }
+    })
+  }
+
+  function sendScreenshotAck(data, fileUri) {
+
+    console.log("fileUri-------------------------------->", fileUri)
+    if (!window.GreMqttClient || !GreMqttClient.getClient) {
+      console.warn("MQTT client not ready for ACK");
+      return;
+    }
+
+    var client = GreMqttClient.getClient();
+    if(!client) {
+      console.warn("MQTT client instance missing");
+      return;
+    }
+
+    var deviceSrNo = GreMqttClient.getDeviceSrNo();
+    var ackTopic = "GRE/" + deviceSrNo + "/CMD_RES";
+
+    var ackPayload = JSON.stringify({
+      cmd: "take_screenshot",
+      seq: data.seq,
+      status: "uploaded",
+      file_name: data.file_name,
+      get_presign_url: data.get_presign_url
+    });
+
+    client.publish(ackTopic, ackPayload, { qos: 1 , retain: false}, function(err) {
+      if (err) console.error("Failed to publish screenshot ACK:", err);
+      else console.log("Screenshot ACK sent:", ackPayload);
+    })
+  }
+
 }
 
 app.appPreLoad();

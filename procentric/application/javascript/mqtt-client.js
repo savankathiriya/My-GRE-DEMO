@@ -342,7 +342,8 @@
         buildResolvedTopics:  function () { return buildResolvedTopics(); },
         resolveTopic:         resolveTopic,
         getClient:            function () { return client; },
-        isConnected:          function () { return !!connected; }
+        isConnected:          function () { return !!connected; },
+        getDeviceSrNo:        function () { return DeviceSrNo; }
     };
 
     // Backward-compatible alias — existing main.js call works with zero changes

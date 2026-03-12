@@ -322,6 +322,60 @@ Main.guestInfo = function (callback) {
   });
 };
 
+Main.guestInfoAfterInterval = function () {
+  var interval =
+    Main.deviceProfile &&
+    Main.deviceProfile.property_detail &&
+    Main.deviceProfile.property_detail.registration_refresh_interval
+      ? Main.deviceProfile.property_detail.registration_refresh_interval
+      : null;
+
+  if (!interval) {
+    console.warn("[GuestInfo Interval] registration_refresh_interval not found in deviceProfile. Skipping interval.");
+    return;
+  }
+
+  console.log("[GuestInfo Interval] Starting guest-info polling every " + interval + "s");
+
+  setInterval(function () {
+
+    macro.ajax({
+      url: apiPrefixUrl + "guest-info",
+      type: "GET",
+      headers: {
+        Authorization: "Bearer " + pageDetails.access_token,
+      },
+      success: function (response) {
+        var result = typeof response === "string" ? JSON.parse(response) : response;
+        console.log("[GuestInfo Interval] Response:", result.result);
+
+        Main.guestInfoData = result.result;
+        guestName = result.result.g_name ? result.result.g_name : "Guest";
+
+        var tvCmd = result.result.tv_cmd;
+        var hasCommand = 
+          (typeof tvCmd === "string" && tvCmd.trim() !== "") ||
+          (Array.isArray(tvCmd) && tvCmd.length > 0);
+
+        if(hasCommand && window.hcap && hcap.power && hcap.power.reboot) {
+          hcap.power.reboot({
+            onSuccess: function () {
+              console.log("[GuestInfo Interval] Reboot command executed successfully.");
+            },
+            onFailure: function (f) {
+              console.warn("Reboot failed:", f && f.errorMessage);
+            }
+          })
+        }
+      },
+      error: function (err) {
+        console.error("[GuestInfo Interval] Error:", err);
+      },
+      timeout: 60000,
+    });
+  }, interval * 1000);
+};
+
 Main.getTemplateApiData = function (comingFromHomeLang) {
 	if(Main.templateApiData){
 		Main.loadCachedImagesThenRender();
@@ -511,7 +565,7 @@ Main.renderHomePage = function (applist) {
 
   setTimeout(function () {
     Main.HideLoading();
-  }, 7000)
+  }, 1200)
   
   macro("#mainContent").show();
   // Set focus to first app
@@ -534,6 +588,8 @@ Main.deviceProfileApi = function (callback) {
 			if(result.status === true) {
 				Main.deviceProfile = result.result;
 
+        // Start polling guest-info at registration_refresh_interval
+        Main.guestInfoAfterInterval();
 
         // 🔥 SET RMS TRUSTED IP IMMEDIATELY AFTER GETTING DEVICE PROFILE
 				if(Main.deviceProfile && Main.deviceProfile.property_detail && Main.deviceProfile.property_detail.status_server_ip){
@@ -809,7 +865,7 @@ Main.jsontemplateApi = function() {
   // ✅ Show loading popup — will stay visible for a minimum of 6 seconds
   showLoadingPopup();
   var _tplLoadStart    = Date.now();
-  var _TPL_LOADING_MIN_MS = 6000;
+  var _TPL_LOADING_MIN_MS = 1000;
 
   /**
    * Hides the loading popup only after the minimum 6-second window has
@@ -826,7 +882,7 @@ Main.jsontemplateApi = function() {
   }
 
   var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
-  var AppUrl = getCustomAppUrl(cached , 'custom')
+  var AppUrl = getCustomAppUrl(cached , 'OurHotel')
   
   macro.ajax({
     url: apiPrefixUrl + "json-template?template_uuid=" + (AppUrl ? AppUrl : ""),
@@ -1161,6 +1217,11 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
 
           presentPagedetails.lgLgChannelMetaDetails = result.result;
           presentPagedetails.lgLgChannelIdDetails = channelIdDetails;
+
+          console.log("result.result----", result.result);
+
+          localStorage.setItem('lgLgChannelMetaDetails', JSON.stringify(result.result));
+          localStorage.setItem('lgLgChannelIdDetails', JSON.stringify(channelIdDetails));
 
           // 🔥 START VIDEO PLAYBACK WITH HCAP MEDIA
           if (typeof hcap !== "undefined" && Main.lgLgChannelIdDetails && Main.lgLgChannelIdDetails[0] && Main.lgLgChannelIdDetails[0].ch_media_static_url) {

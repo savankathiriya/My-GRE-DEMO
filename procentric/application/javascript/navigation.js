@@ -532,7 +532,7 @@ Navigation.homePageNavigation = function (event) {
         // Main.deviceActivity("open","app",source);
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
-      else if (appUrl === "custom") {
+      else if (appUrl === "OurHotel") {
         Main.jsontemplateApi();
       }
 
@@ -612,7 +612,7 @@ Navigation.ourHotelPageNavigation = function (event) {
             // ── Step 1 (INSTANT): Show loading spinner to cover the screen.
             //    Loading will remain visible for a minimum of 6 seconds.
             var _exitLoadStart = Date.now();
-            var _EXIT_LOADING_MIN_MS = 6000;
+            var _EXIT_LOADING_MIN_MS = 1200;
 
             try {
                 if (typeof Main !== 'undefined' && Main.ShowLoading) {

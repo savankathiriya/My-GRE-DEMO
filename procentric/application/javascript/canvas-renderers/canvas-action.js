@@ -1118,6 +1118,22 @@ var CanvasAction = (function () {
         container.appendChild(overlay);
         focusOverlays[elementId] = overlay;
         console.log('[CanvasAction] Focus overlay created:', elementId);
+
+        /* If navigation has already set a default focus (focusedIndex >= 0) and
+           this element is the focused one, show its border immediately.
+           This fixes the case where initializeNavigation() ran before render()
+           created the overlay, so the initial focus border was never displayed. */
+        if (focusedIndex >= 0 && focusedIndex < actionElements.length) {
+            var focused = actionElements[focusedIndex];
+            var _fRawId   = (focused.id   !== undefined && focused.id   !== null) ? String(focused.id)   : '';
+            var _fRawName = (focused.name !== undefined && focused.name !== null) ? String(focused.name) : '';
+            var fid = _fRawId + (_fRawName ? ('_' + _fRawName) : '') || 'action-unknown';
+            if (fid === elementId) {
+                overlay.style.display = 'block';
+                setTimeout(function () { overlay.style.opacity = '1'; }, 10);
+                console.log('[CanvasAction] Default focus border shown for:', elementId);
+            }
+        }
     }
 
     function updateFocusOverlays() {
@@ -1313,7 +1329,7 @@ var CanvasAction = (function () {
 
         // ── Track loading start time so we can enforce a minimum 6-second display
         var loadingStartTime = Date.now();
-        var LOADING_MIN_MS   = 6000;
+        var LOADING_MIN_MS   = 1200;
 
         /**
          * Hides the loading indicator only after the minimum display time has
