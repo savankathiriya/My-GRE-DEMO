@@ -224,7 +224,7 @@ Main.deviceRegistrationAPi = function () {
 				Main.deviceProfileApi(function () {
 					Navigation.updateDownloadProgress(60);
 
-          Main.registerGoogleCastToken();
+          Main.lgSetting();
 
 					if(Main.db) {
 						try { Main.db.close(); } catch(ex) {console.log("Error closing IndexedDB:", ex)}
@@ -854,6 +854,40 @@ Main.weatherApi = function (callback) {
       if (typeof callback === "function") {
         callback();
       }
+    },
+    timeout: 60000,
+  });
+};
+
+Main.lgSetting = function () {
+  macro.ajax({
+    url: apiPrefixUrl + "lg-setting",
+    type: "GET",
+    headers: {
+      Authorization: "Bearer " + pageDetails.access_token,
+    },
+    success: function (response) {
+      var result =
+        typeof response === "string" ? JSON.parse(response) : response;
+
+        if(result.status === true) {
+          Main.lgSettings = result.result;
+
+          if(result.result && result.result.google_cast_app_token) {
+            Main.registerGoogleCastToken();
+          }
+          if(result.result && result.result.netflix_app_token) {
+            try {
+                bindingAppsToPms();
+            } catch (e) { console.warn("bindingAppsToPms error:", e); }
+          }
+        }
+        console.log("lgSetting---------------------------->", result)
+      Main.HideLoading();
+    },
+    error: function (err) {
+      Main.HideLoading();
+      console.error("Weather API error:", err);
     },
     timeout: 60000,
   });

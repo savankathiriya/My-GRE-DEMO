@@ -438,7 +438,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if (appUrl === "Netflix") {
         hcap.preloadedApplication.launchPreloadedApplication({
-          id: "244115188075859013", // this id i have get from the hcap document
+          id: Main.lgSettings.netflix_app_id, // this id i have get from the hcap document
           parameters: JSON.stringify({
             reason: "launcher",  // or "hotKey" / "boot"
             params: {
@@ -458,7 +458,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if (appUrl === "Youtube") {
         hcap.preloadedApplication.launchPreloadedApplication({
-          id: "144115188075859002",
+          id: Main.lgSettings.youtube_app_id,
           parameters: "{}",
           onSuccess: function(response) {
             // Main.deviceActivity("close","page","Home screen");
@@ -472,7 +472,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if(appUrl === "accuweather") {
         hcap.preloadedApplication.launchPreloadedApplication({
-          id: "144115188075855876",
+          id: Main.lgSettings.accuweather_app_id,
           parameters: "{}",
           onSuccess: function() {
             // Main.deviceActivity("close","page","Home screen");

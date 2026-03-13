@@ -1082,42 +1082,141 @@ var CanvasAction = (function () {
         var container = canvas.parentElement;
         if (!container) return;
 
-        /* Ensure container is position:fixed at 0,0 -- same as canvas.
-           el.x / el.y are screen pixels; they map correctly only when
-           the offset parent sits exactly at the viewport origin. */
-        container.style.position = 'fixed';
-        container.style.top      = '0';
-        container.style.left     = '0';
-
-        /* el.x / el.y / el.width / el.height are already screen pixels.
-         * The container is position:fixed covering the full screen,
-         * so we can place the overlay directly at those pixel values.
-         */
-        var overlay           = document.createElement('div');
-        overlay.id            = 'focus-overlay-' + elementId;
-        overlay.style.position = 'absolute';
-        overlay.style.left     = Math.round(el.x)      + 'px';
-        overlay.style.top      = Math.round(el.y)      + 'px';
-        overlay.style.width    = Math.round(el.width)  + 'px';
-        overlay.style.height   = Math.round(el.height) + 'px';
-        overlay.style.zIndex   = '1000';   /* above video (500) */
-        overlay.style.pointerEvents  = 'none';
-        overlay.style.display        = 'none';
-        overlay.style.boxSizing      = 'border-box';
-        overlay.style.transition     = 'opacity 0.15s ease-in-out';
-        overlay.style.opacity        = '0';
-
         var fbc = el.focusBorderColor || '#3b82f6';
         var fbw = el.focusBorderWidth || 4;
         var br  = Math.round(el.borderRadius || 0);
 
-        overlay.style.border       = fbw + 'px solid ' + fbc;
-        overlay.style.borderRadius = br + 'px';
-        overlay.style.boxShadow    = '0 0 24px 4px ' + fbc;
+        var overlay    = document.createElement('div');
+        overlay.id     = 'focus-overlay-' + elementId;
+        overlay.style.pointerEvents = 'none';
+        overlay.style.display       = 'none';
+        overlay.style.boxSizing     = 'border-box';
+        overlay.style.transition    = 'opacity 0.15s ease-in-out';
+        overlay.style.opacity       = '0';
+        overlay.style.border        = fbw + 'px solid ' + fbc;
+        overlay.style.borderRadius  = br + 'px';
+        overlay.style.boxShadow     = '0 0 24px 4px ' + fbc;
 
-        container.appendChild(overlay);
+        /*
+         * ANIMATION-AWARE FOCUS BORDER PLACEMENT
+         * ───────────────────────────────────────
+         * When an action element has a CSS animation (slide, zoom, fade …),
+         * its DOM overlay wrap is the element that actually moves/transforms.
+         * If we place the focus border as an absolute-positioned sibling div
+         * at (el.x, el.y), it stays frozen at those screen coordinates while
+         * the card flies in — the two are visually misaligned throughout the
+         * animation.
+         *
+         * Fix: when an animated DOM overlay exists for this element, inject
+         * the focus border INSIDE that wrap as a 100 % × 100 % child.  The
+         * child inherits the parent's CSS transform, so it always moves with
+         * the card — both during the entry animation and at rest.
+         *
+         * For non-animated (canvas-drawn) elements the old sibling approach
+         * is kept because there is no parent wrap to attach to.
+         */
+        var isAnimated = _hasAnimation(el);
+
+        /* Try to find the animated DOM wrap for this element. */
+        /*
+         * Helper: find the animated card wrap in the DOM for this element.
+         * Checks both image-card overlay and button-overlay data attributes,
+         * and matches by the combined elementId key as well as raw id/name.
+         */
+        function _findCardWrap() {
+            var w = document.querySelector('[data-action-overlay-id="' + elementId + '"]') ||
+                    document.querySelector('[data-action-btn-id="'     + elementId + '"]');
+            if (!w && _rawId2) {
+                w = document.querySelector('[data-action-overlay-id="' + _rawId2 + '"]') ||
+                    document.querySelector('[data-action-btn-id="'     + _rawId2 + '"]');
+            }
+            if (!w && _rawName2) {
+                w = document.querySelector('[data-action-overlay-id="' + _rawName2 + '"]') ||
+                    document.querySelector('[data-action-btn-id="'     + _rawName2 + '"]');
+            }
+            return w || null;
+        }
+
+        var cardWrap = isAnimated ? _findCardWrap() : null;
+
+        if (isAnimated && !cardWrap) {
+            /*
+             * The DOM overlay wrap doesn't exist yet — CanvasAnimation uses a
+             * double-rAF before applying animation, so the wrap is created
+             * asynchronously.  Poll until it appears (max ~300 ms), then
+             * re-parent the overlay div into the wrap so it inherits the
+             * CSS transform.
+             */
+            /* First: add as sibling so the focus border is available immediately
+               if the user navigates before the animation fires. */
+            container.style.position = 'fixed';
+            container.style.top      = '0';
+            container.style.left     = '0';
+            overlay.style.position = 'absolute';
+            overlay.style.left     = Math.round(el.x)      + 'px';
+            overlay.style.top      = Math.round(el.y)      + 'px';
+            overlay.style.width    = Math.round(el.width)  + 'px';
+            overlay.style.height   = Math.round(el.height) + 'px';
+            overlay.style.zIndex   = '1000';
+            container.appendChild(overlay);
+
+            /* Poll up to 15 times x 20 ms = 300 ms for the wrap to appear. */
+            var _pollCount = 0;
+            var _pollMax   = 15;
+            var _pollId    = setInterval(function () {
+                _pollCount++;
+                var wrap = _findCardWrap();
+                if (wrap) {
+                    clearInterval(_pollId);
+                    /* Re-parent: detach from container, attach inside the wrap. */
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    overlay.style.position = 'absolute';
+                    overlay.style.left     = '0';
+                    overlay.style.top      = '0';
+                    overlay.style.width    = '100%';
+                    overlay.style.height   = '100%';
+                    overlay.style.zIndex   = '999';
+                    wrap.appendChild(overlay);
+                    console.log('[CanvasAction] Focus overlay re-parented into animated wrap:', elementId);
+                } else if (_pollCount >= _pollMax) {
+                    clearInterval(_pollId);
+                    console.warn('[CanvasAction] Focus overlay kept as sibling (wrap not found after poll):', elementId);
+                }
+            }, 20);
+
+        } else if (cardWrap) {
+            /*
+             * CHILD MODE — wrap already exists (synchronous path).
+             * Focus border lives inside the animated card wrap so it inherits
+             * the CSS transform (100% x 100% covers the card exactly).
+             */
+            overlay.style.position = 'absolute';
+            overlay.style.left     = '0';
+            overlay.style.top      = '0';
+            overlay.style.width    = '100%';
+            overlay.style.height   = '100%';
+            overlay.style.zIndex   = '999';
+            cardWrap.appendChild(overlay);
+            console.log('[CanvasAction] Focus overlay created (child of animated wrap):', elementId);
+        } else {
+            /*
+             * SIBLING MODE — non-animated / canvas-drawn elements.
+             * Original behaviour: absolute div at element's screen coordinates.
+             */
+            container.style.position = 'fixed';
+            container.style.top      = '0';
+            container.style.left     = '0';
+            overlay.style.position = 'absolute';
+            overlay.style.left     = Math.round(el.x)      + 'px';
+            overlay.style.top      = Math.round(el.y)      + 'px';
+            overlay.style.width    = Math.round(el.width)  + 'px';
+            overlay.style.height   = Math.round(el.height) + 'px';
+            overlay.style.zIndex   = '1000';
+            container.appendChild(overlay);
+            console.log('[CanvasAction] Focus overlay created (sibling):', elementId);
+        }
+
         focusOverlays[elementId] = overlay;
-        console.log('[CanvasAction] Focus overlay created:', elementId);
 
         /* If navigation has already set a default focus (focusedIndex >= 0) and
            this element is the focused one, show its border immediately.
@@ -1188,20 +1287,48 @@ var CanvasAction = (function () {
     function findClosestInDirection(currentEl, direction) {
         var cx = currentEl.x + currentEl.width  / 2;
         var cy = currentEl.y + currentEl.height / 2;
-        var bestDist = Infinity, bestIndex = -1;
+        var bestScore = Infinity, bestIndex = -1;
 
         for (var i = 0; i < actionElements.length; i++) {
             if (actionElements[i] === currentEl) continue;
             var el  = actionElements[i];
             var elX = el.x + el.width  / 2;
             var elY = el.y + el.height / 2;
-            var d   = Math.sqrt(Math.pow(elX - cx, 2) + Math.pow(elY - cy, 2));
+            var dx  = elX - cx;
+            var dy  = elY - cy;
             var ok  = false;
-            if      (direction === 'up'   ) ok = elY < cy - 20;
-            else if (direction === 'down' ) ok = elY > cy + 20;
-            else if (direction === 'left' ) ok = elX < cx - 20;
-            else if (direction === 'right') ok = elX > cx + 20;
-            if (ok && d < bestDist) { bestDist = d; bestIndex = i; }
+
+            /* Candidate must be clearly in the intended direction */
+            if      (direction === 'up'   ) ok = dy < -20;
+            else if (direction === 'down' ) ok = dy >  20;
+            else if (direction === 'left' ) ok = dx < -20;
+            else if (direction === 'right') ok = dx >  20;
+            if (!ok) continue;
+
+            /*
+             * Weighted score:
+             *   For LEFT/RIGHT navigation the primary axis is horizontal (dx).
+             *   Cross-axis deviation (dy) is penalised heavily (3×) so that an
+             *   element on the same row always wins over a closer element on a
+             *   different row.  The same logic applies (swapped) for UP/DOWN.
+             *
+             *   score = primaryAxis² + (CROSS_PENALTY × crossAxis)²
+             *
+             * A penalty of 3 means a candidate must be 3× closer on the cross
+             * axis than it is on the primary axis before it can "steal" focus
+             * away from a same-row/same-column neighbour.
+             */
+            var CROSS_PENALTY = 3;
+            var score;
+            if (direction === 'left' || direction === 'right') {
+                /* primary: dx, cross: dy */
+                score = dx * dx + Math.pow(CROSS_PENALTY * dy, 2);
+            } else {
+                /* primary: dy, cross: dx */
+                score = dy * dy + Math.pow(CROSS_PENALTY * dx, 2);
+            }
+
+            if (score < bestScore) { bestScore = score; bestIndex = i; }
         }
         return bestIndex;
     }

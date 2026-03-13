@@ -1,9 +1,10 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.670"
+	appVersion:"v1.700"
 };
 var loadFilePaths = 'macrotv.json';
+var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
 var scount = 0, mainCount = 0;
 var isLoading = false;
 var airMouse = false;

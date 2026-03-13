@@ -463,7 +463,7 @@ function bindingAppsToPms(){
     // 2. Register SI apps with tokens
     hcap.application.RegisterSIApplicationList({
       tokenList: [
-        { id: "netflix", token: netflixToken }
+        { id: "netflix", token: Main.lgSettings.netflix_app_token }
       ],
       onSuccess: function () {
         // utilities.genricPopup("netflix Tokens registered");

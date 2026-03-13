@@ -99,7 +99,7 @@ function initTokenRegistrationMonitoring() {
  */
 Main.registerGoogleCastToken = function() {
   // ⚠️ REPLACE WITH YOUR ACTUAL TOKEN
-  var token = "gcTZrTrQyTktcGl1H7onXt0xyt7lXK/9eG17OhSqLgdIwjP2Dm+6ok2u5Cu65/8TWZvOIHL6Auh8WKaM1gGB5evANHyAR9EeJALO3UlUsLtzRZsGvcBOYK1EaAYAvBDELAoG7xR5txoFL7FbT+cGOldUSMRxl2d9kAczGIiebz+zrfWGMjJdwnW8clLmwuA0VGDj+m5Y0F9nDfnHAjT4rcq2+SGxKZCuwz/91nLGOvu5hUS+jJ4InOEKpuNZvYVbIb7Z83xep41VLifnmMZNaTD8iXdUH0c7XO0FKQNUNskG3zwp8UiFtGy+2ISMmYYDSauxyrRY4iY03L9x1HMriw==";
+  var token = Main.lgSettings.google_cast_app_token
   
   console.log("[Google Cast] Registering token...");
   
