@@ -63,6 +63,8 @@ Main.processTrigger = function (rawEvent) {
         return Navigation.demoPlayers(evt);
       case "ourHotel":
         return Navigation.ourHotelPageNavigation(evt);
+      case "playlist":
+        return Navigation.playlistPageNavigation(evt);
     }
   } catch (ex) {
     console.error("processTrigger error", ex);
@@ -73,7 +75,7 @@ Main.processTrigger = function (rawEvent) {
 Main.addBackData = function (path) {
   presentPagedetails.htmlData = (macro('#mainContent').html() ).toString();
 
-  if(path == "MyDevice" || path == "liveTv" || path == "casting" || path == "lgLgLiveTv" || path == "liveTvPlayer" || path == "ourHotel") {
+  if(path == "MyDevice" || path == "liveTv" || path == "casting" || path == "lgLgLiveTv" || path == "liveTvPlayer" || path == "ourHotel" || path == "playlist") {
     backData.push(presentPagedetails);
     presentPagedetails = {}
   }
@@ -893,7 +895,7 @@ Main.lgSetting = function () {
   });
 };
 
-Main.jsontemplateApi = function() {
+Main.jsontemplateApi = function(AppUrl) {
   console.log('[API] Fetching template data...');
   
   // ✅ Show loading popup — will stay visible for a minimum of 6 seconds
@@ -915,8 +917,8 @@ Main.jsontemplateApi = function() {
     }
   }
 
-  var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
-  var AppUrl = getCustomAppUrl(cached , 'OurHotel')
+  // var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
+  // var AppUrl = getCustomAppUrl(cached , 'OurHotel')
   
   macro.ajax({
     url: apiPrefixUrl + "json-template?template_uuid=" + (AppUrl ? AppUrl : ""),
@@ -969,6 +971,50 @@ Main.jsontemplateApi = function() {
     timeout: 30000 
   });
 }
+
+Main.playlistApi = function () {
+  var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[Main.clickedLanguage]) || [];
+  var AppUrl = getCustomAppUrl(cached, 'Playlist');
+
+  Main.ShowLoading();
+
+  macro.ajax({
+    url: apiPrefixUrl + "json-play-list?play_list_uuid=" + (AppUrl ? AppUrl : ""),
+    type: "GET",
+    headers: {
+      Authorization: "Bearer " + pageDetails.access_token,
+    },
+    success: function (response) {
+      try {
+        var result = typeof response === "string" ? JSON.parse(response) : response;
+
+        if (result.status === true && result.result) {
+          Main.playlistData = result.result;
+          console.log('[PlaylistAPI] Playlist data loaded successfully', result.result);
+
+          // Start the playlist slideshow player
+          if (typeof PlaylistPlayer !== 'undefined') {
+            PlaylistPlayer.start(Main.playlistData);
+          } else {
+            console.error('[PlaylistAPI] PlaylistPlayer not loaded – include canvas-playlist.js');
+            Main.HideLoading();
+          }
+        } else {
+          console.warn('[PlaylistAPI] API returned no result or status:false');
+          Main.HideLoading();
+        }
+      } catch (parseError) {
+        console.error('[PlaylistAPI] Failed to parse playlist response:', parseError);
+        Main.HideLoading();
+      }
+    },
+    error: function (err) {
+      console.error('[PlaylistAPI] Playlist fetch failed:', err);
+      Main.HideLoading();
+    },
+    timeout: 30000,
+  });
+};
 
 Main.castingNewApi = function () {
   Main.addBackData("casting");

@@ -1615,3 +1615,60 @@ Util.ourHotelPage = function () {
 
     return html;
 };
+
+/**
+ * Util.playlistPage()
+ *
+ * HTML shell for the Playlist slideshow player.
+ *
+ * IMPORTANT: Every canvas module (CanvasRenderer, CanvasBackground,
+ * CanvasWeather, CanvasGif, CanvasRss, CanvasTicker, CanvasImage,
+ * CanvasAction …) hard-codes the IDs  #templateCanvas  and
+ * #our-hotel-container.  The playlist page therefore keeps the same IDs
+ * on the ACTIVE (visible) slot at all times.
+ *
+ * Two full container+canvas pairs are stacked on top of each other:
+ *   slot-A  →  #our-hotel-container  /  #templateCanvas   (active, z:10)
+ *   slot-B  →  #playlist-slot-b      /  #playlist-canvas-b (hidden, z:9)
+ *
+ * PlaylistPlayer renders the next slide into slot-B (giving it the
+ * required IDs first), then CSS-fades slot-B over slot-A, and finally
+ * swaps the IDs back so slot-B becomes the new #our-hotel-container.
+ */
+Util.playlistPage = function () {
+    var w = window.innerWidth  || 1920;
+    var h = window.innerHeight || 1080;
+
+    var slotStyle = 'position:absolute; top:0; left:0; width:100%; height:100%; overflow:hidden;';
+    var canvasStyle = 'display:block; position:absolute; top:0; left:0;'
+                    + 'width:' + w + 'px; height:' + h + 'px; margin:0; padding:0;';
+
+    var html = '';
+    // Outer wrapper – full-screen black base
+    html += '<div id="playlist-wrapper" style="'
+          +   'position:fixed; top:0; left:0; width:100%; height:100%;'
+          +   'background:#000; z-index:1000; overflow:hidden;'
+          + '">';
+
+    // ── Slot B (hidden / incoming) – sits BELOW slot A initially ──────
+    html += '  <div id="playlist-slot-b" style="' + slotStyle + 'z-index:9; opacity:0;">';
+    html += '    <canvas id="playlist-canvas-b"'
+          + '      width="' + w + '" height="' + h + '"'
+          + '      style="' + canvasStyle + '">'
+          + '    </canvas>';
+    html += '  </div>';
+
+    // ── Slot A (active / front) – carries the required IDs ────────────
+    // id="our-hotel-container" so CanvasBackground inserts video behind canvas.
+    // id="templateCanvas"      so CanvasRenderer and every other module finds it.
+    html += '  <div id="our-hotel-container" style="' + slotStyle + 'z-index:10; opacity:1;">';
+    html += '    <canvas id="templateCanvas"'
+          + '      width="' + w + '" height="' + h + '"'
+          + '      style="' + canvasStyle + '">'
+          + '    </canvas>';
+    html += '  </div>';
+
+    html += '</div>';
+
+    return html;
+};

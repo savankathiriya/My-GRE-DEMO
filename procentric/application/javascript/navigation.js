@@ -270,6 +270,8 @@ Navigation.homePageLoad = function (menuData) {
       i +
       '" appUrl="' +
       (item.lg_app_id || "") +
+      '" app_url="' +
+      (item.app_url || "") +
       '" source="' +
       (item.name || "") +
       '" class="menu-item">' +
@@ -313,6 +315,7 @@ Navigation.homePageNavigation = function (event) {
   var id = focusedItem.attr("id");
   var source = focusedItem.attr("source");
   var appUrl = focusedItem.attr("appUrl");
+  var app_url = focusedItem.attr("app_url");
 
   console.log("keycode, id, source, appUrl", keycode, id, source, appUrl);
 
@@ -533,7 +536,10 @@ Navigation.homePageNavigation = function (event) {
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "OurHotel") {
-        Main.jsontemplateApi();
+        Main.jsontemplateApi(app_url);
+      }
+      else if (appUrl === "Playlist") {
+          Main.playlistApi();
       }
 
       break;
@@ -716,6 +722,36 @@ Navigation.initializeOurHotelNavigation = function() {
             console.error('[Navigation] Failed to initialize OurHotel navigation:', e);
         }
     }, 500);
+};
+
+/**
+ * ====================================================================
+ * PLAYLIST PAGE NAVIGATION
+ * The slideshow advances automatically by timer.
+ * Only EXIT / BACK stops the player and returns to the previous page.
+ * ====================================================================
+ */
+Navigation.playlistPageNavigation = function (event) {
+    var key = getKeyCode(event).keycode;
+    console.log('[Navigation] Playlist key pressed:', key);
+
+    switch (key) {
+        case tvKeyCode.Return:
+        case tvKeyCode.Exit:
+        case 8:
+        case 461:
+        case 10009:
+            console.log('[Navigation] EXIT – stopping playlist player');
+            if (typeof PlaylistPlayer !== 'undefined' && PlaylistPlayer.isActive()) {
+                PlaylistPlayer.stop();
+            } else {
+                Main.previousPage();
+            }
+            break;
+
+        default:
+            break;
+    }
 };
 
 
