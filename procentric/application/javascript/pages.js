@@ -1461,7 +1461,7 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
  * ====================================================================
  */
 
-Util.ourHotelPage = function () {
+Util.ourHotelPage = function (onReady) {
     var html = '';
     
     // ✅ COMPLETE FIX: Remove ALL flexbox centering
@@ -1511,81 +1511,16 @@ Util.ourHotelPage = function () {
                 CanvasVideo.cleanup();
             }
             
-            // Render the canvas
+            // Pass onReady so loader hides only after canvas is painted
             if (typeof renderTemplateCanvas !== 'undefined') {
-                renderTemplateCanvas();
+                renderTemplateCanvas(onReady);
             } else if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.render) {
-                CanvasRenderer.render();
+                CanvasRenderer.render(onReady);
+            } else {
+                if (typeof onReady === 'function') onReady();
             }
 
-            // ✅ Hide loading - wait for bg video if backgroundType === 'video'
-            (function () {
-                var bgType = '';
-                try {
-                    bgType = Main.jsonTemplateData &&
-                             Main.jsonTemplateData.template_json &&
-                             Main.jsonTemplateData.template_json.canvas &&
-                             Main.jsonTemplateData.template_json.canvas.backgroundType || '';
-                } catch (e) {}
-
-                if (bgType === 'video') {
-                    // CanvasBackground creates #bg-video-el inside #bg-video-wrap.
-                    // Poll until the <video> element exists, then wait for canplay.
-                    var _maxWait     = 8000;   // give up after 8 s
-                    var _pollMs      = 100;
-                    var _waited      = 0;
-                    var _loaderHidden = false;
-
-                    function _hideOnce() {
-                        if (_loaderHidden) return;
-                        _loaderHidden = true;
-                        console.log('[OurHotel] ✅ BG video ready - loader hidden');
-                    }
-
-                    var _poller = setInterval(function () {
-                        _waited += _pollMs;
-
-                        // CanvasBackground gives the video element id="bg-video-el"
-                        var bgVid = document.getElementById('bg-video-el');
-
-                        if (bgVid) {
-                            clearInterval(_poller);
-
-                            if (bgVid.readyState >= 3) {
-                                // Already has enough data to play
-                                _hideOnce();
-                            } else {
-                                bgVid.addEventListener('canplay', function onCP() {
-                                    bgVid.removeEventListener('canplay', onCP);
-                                    _hideOnce();
-                                });
-                                bgVid.addEventListener('playing', function onPL() {
-                                    bgVid.removeEventListener('playing', onPL);
-                                    _hideOnce();
-                                });
-                                bgVid.addEventListener('error', function onErr() {
-                                    bgVid.removeEventListener('error', onErr);
-                                    console.warn('[OurHotel] ⚠️ BG video error - loader hidden anyway');
-                                    _hideOnce();
-                                });
-                            }
-                            return;
-                        }
-
-                        if (_waited >= _maxWait) {
-                            clearInterval(_poller);
-                            console.warn('[OurHotel] ⚠️ Timed out waiting for bg-video-el - loader hidden');
-                            _hideOnce();
-                        }
-                    }, _pollMs);
-
-                } else {
-                    // Non-video background - hide after short render delay
-                    setTimeout(function () {
-                        console.log('[OurHotel] ✅ Loading hidden - canvas fully rendered');
-                    }, 500);
-                }
-            })();
+            // onReady fires from inside CanvasRenderer.render() — no extra hide logic needed here();
 
             // Start animation loop for live updates (clocks, etc.)
             console.log('[OurHotel] Starting animation loop for live clock updates...');
@@ -1600,18 +1535,13 @@ Util.ourHotelPage = function () {
                 Navigation.initializeOurHotelNavigation();
                 console.log('[OurHotel] ✅ Navigation initialized!');
             } else if (typeof CanvasAction !== 'undefined' && CanvasAction.initializeNavigation) {
-                setTimeout(function() {
-                    if (Main.jsonTemplateData && 
+                requestAnimationFrame(function() {
+                    if (Main.jsonTemplateData &&
                         Main.jsonTemplateData.template_json &&
                         Main.jsonTemplateData.template_json.elements) {
-                        
                         CanvasAction.initializeNavigation(Main.jsonTemplateData.template_json.elements);
-                        
-                        if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.refresh) {
-                            CanvasRenderer.refresh();
-                        }
                     }
-                }, 500);
+                });
             }
             
         } catch (e) {

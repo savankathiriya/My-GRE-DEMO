@@ -23,7 +23,7 @@ var CanvasRenderer = (function() {
     /**
      * Main render function - orchestrates all rendering
      */
-    function render() {
+    function render(onReady) {
         console.log('[CanvasRenderer] ===== Starting Canvas Render =====');
         
         var canvas = document.getElementById('templateCanvas');
@@ -195,10 +195,16 @@ var CanvasRenderer = (function() {
 
         function _doRender() {
             if (_bgType === 'image' && _canvasConfig.backgroundImage) {
-                renderBackgroundThenElements(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height, _sortedElements, _canvas);
+                renderBackgroundThenElements(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height, _sortedElements, _canvas, onReady);
+            } else if (_bgType === 'video') {
+                CanvasBackground.render(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height, onReady);
+                renderAllElements(_ctx, _sortedElements, _canvas);
             } else {
                 CanvasBackground.render(_ctx, _canvasConfig, _canvasConfig.width, _canvasConfig.height);
                 renderAllElements(_ctx, _sortedElements, _canvas);
+                if (typeof onReady === 'function') {
+                    requestAnimationFrame(function() { requestAnimationFrame(onReady); });
+                }
             }
             console.log('[CanvasRenderer] ===== Canvas Render Complete =====');
         }
@@ -213,62 +219,48 @@ var CanvasRenderer = (function() {
     /**
      * Render background image first, then all elements on top
      */
-    function renderBackgroundThenElements(ctx, canvasConfig, width, height, sortedElements, canvas) {
-        console.log('[CanvasRenderer] Rendering background image first...');
-        
-        // Draw solid background color first (fallback)
-        if (canvasConfig.background && canvasConfig.background !== 'transparent') {
-            ctx.fillStyle = canvasConfig.background;
-            ctx.fillRect(0, 0, width, height);
-        }
-        
-        // Get background image URL
-        var imageUrl = Array.isArray(canvasConfig.backgroundImage) 
-            ? canvasConfig.backgroundImage[0] 
-            : canvasConfig.backgroundImage;
-        
+    function renderBackgroundThenElements(ctx, canvasConfig, width, height, sortedElements, canvas, onReady) {
+        var fallbackColor = (canvasConfig.background && canvasConfig.background !== 'transparent')
+            ? canvasConfig.background : '#000000';
+        ctx.fillStyle = fallbackColor;
+        ctx.fillRect(0, 0, width, height);
+
+        var imageUrl = Array.isArray(canvasConfig.backgroundImage)
+            ? canvasConfig.backgroundImage[0] : canvasConfig.backgroundImage;
+
         if (!imageUrl) {
-            console.warn('[CanvasRenderer] No background image URL found');
             renderAllElements(ctx, sortedElements, canvas);
+            if (typeof onReady === 'function') requestAnimationFrame(function() { requestAnimationFrame(onReady); });
             return;
         }
-        
-        var opacity = typeof canvasConfig.backgroundOpacity !== 'undefined' ? canvasConfig.backgroundOpacity : 1;
-        var fit = canvasConfig.backgroundFit || 'cover';
-        
-        // Load background image
-        var bgImg = new Image();
-        bgImg.crossOrigin = 'anonymous';
-        
-        bgImg.onload = function() {
-            console.log('[CanvasRenderer] âœ… Background image loaded, rendering...');
-            
-            // Cache for clock/slideshow repaints
-            cachedBgImage = bgImg;
-            cachedBgFit   = fit;
-            cachedBgOpacity = opacity;
 
-            // Draw background image
+        var opacity = typeof canvasConfig.backgroundOpacity !== 'undefined' ? canvasConfig.backgroundOpacity : 1;
+        var fit     = canvasConfig.backgroundFit || 'cover';
+
+        function _drawAndFinish(bgImg) {
+            cachedBgImage = bgImg; cachedBgFit = fit; cachedBgOpacity = opacity;
             ctx.save();
             ctx.globalAlpha = opacity;
             CanvasBase.drawImageWithFit(ctx, bgImg, 0, 0, width, height, fit);
             ctx.restore();
-            
-            console.log('[CanvasRenderer] âœ… Background rendered, now rendering elements...');
-            
-            // NOW render all elements on top of the background
             renderAllElements(ctx, sortedElements, canvas);
-        };
-        
-        bgImg.onerror = function() {
-            console.warn('[CanvasRenderer] âŒ Background image failed to load, rendering elements anyway');
-            // Still render elements even if background fails
+            if (typeof onReady === 'function') requestAnimationFrame(function() { requestAnimationFrame(onReady); });
+        }
+        function _onError() {
             renderAllElements(ctx, sortedElements, canvas);
-        };
-        
+            if (typeof onReady === 'function') requestAnimationFrame(function() { requestAnimationFrame(onReady); });
+        }
+
+        if (typeof CanvasBase !== 'undefined' && CanvasBase.loadImage) {
+            CanvasBase.loadImage(imageUrl, _drawAndFinish, _onError);
+            return;
+        }
+        var bgImg = new Image();
+        bgImg.crossOrigin = 'anonymous';
+        bgImg.onload  = function() { _drawAndFinish(bgImg); };
+        bgImg.onerror = _onError;
         bgImg.src = imageUrl;
     }
-
     /**
      * Render all elements in order
      */
@@ -669,4 +661,4 @@ var CanvasRenderer = (function() {
 })();
 
 // Expose globally for backward compatibility
-window.renderTemplateCanvas = CanvasRenderer.render;
+window.renderTemplateCanvas = function(onReady) { CanvasRenderer.render(onReady); };

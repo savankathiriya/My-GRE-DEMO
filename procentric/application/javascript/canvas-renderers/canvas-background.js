@@ -35,7 +35,7 @@ var CanvasBackground = (function () {
        Called by CanvasRenderer for every full render pass.
        width / height are already SCREEN PIXELS (CanvasScaler has run).
     ================================================================ */
-    function render(ctx, config, width, height) {
+    function render(ctx, config, width, height, onReady) {
         console.log('[CanvasBackground] Rendering, size:', width + 'x' + height);
 
         ctx.save();
@@ -73,7 +73,7 @@ var CanvasBackground = (function () {
                Any opaque fill here would block the video from showing through.  */
             ctx.clearRect(0, 0, width, height);
             console.log('[CanvasBackground] Video -- canvas cleared transparent, creating overlay');
-            createBackgroundVideo(config, width, height);
+            createBackgroundVideo(config, width, height, onReady);
 
         } else {
             console.log('[CanvasBackground] No background media -- color only');
@@ -121,7 +121,7 @@ var CanvasBackground = (function () {
        Full-screen <video> overlay inserted BEHIND the canvas.
        Mirrors canvas-action.js createBackgroundVideo() exactly.
     ================================================================ */
-    function createBackgroundVideo(config, screenW, screenH) {
+    function createBackgroundVideo(config, screenW, screenH, onReady) {
         var src = (config.backgroundVideo || '').trim();
         if (!src) { cleanupVideo(); return; }
 
@@ -360,6 +360,9 @@ var CanvasBackground = (function () {
                 console.log('[CanvasBackground] BG video playing OK | src index:', _srcIndex,
                             '| url:', _srcList[_srcIndex]);
                 _resetHcapVideoSizeFullScreen(screenW, screenH);
+                if (typeof onReady === 'function') {
+                    requestAnimationFrame(function() { requestAnimationFrame(function() { onReady(); onReady = null; }); });
+                }
             }
         });
 
@@ -477,6 +480,9 @@ var CanvasBackground = (function () {
         setTimeout(function () {
             if (!_started) { _tryPlay(); }
         }, 1500);
+        setTimeout(function () {
+            if (typeof onReady === 'function') { onReady(); onReady = null; }
+        }, 4000);
 
         /* ── HLS seamless-loop watchdog ──────────────────────────────
            Some LG firmware versions do not fire 'ended' for HLS/VOD.

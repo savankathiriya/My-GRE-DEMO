@@ -26,6 +26,7 @@ var CanvasAction = (function () {
     var focusOverlays  = {};   // { elementId â†’ <div> }
     var activeVideos   = [];   // [{ video:<video>, elementId, wrapDiv:<div> }]
     var _actionDomOverlays = []; // DOM card overlays for video-bg mode
+    var _lastFocusedElementId = null; // restored on EXIT
 
     /* Helper: is a video canvas background currently active? */
     function _isVideoBg() {
@@ -1283,7 +1284,16 @@ var CanvasAction = (function () {
         });
 
         if (actionElements.length > 0) {
-            focusedIndex = 0;
+            var _ri = 0;
+            if (_lastFocusedElementId) {
+                for (var _k = 0; _k < actionElements.length; _k++) {
+                    var _e = actionElements[_k];
+                    var _ek = ((_e.id !== undefined ? String(_e.id) : '')) + ((_e.name !== undefined ? ('_' + String(_e.name)) : ''));
+                    if (_ek === _lastFocusedElementId) { _ri = _k; break; }
+                }
+            }
+            focusedIndex = _ri;
+            _lastFocusedElementId = null;
             updateFocusOverlays();
         }
         console.log('[CanvasAction] Navigation ready:', actionElements.length, 'elements');
@@ -1362,6 +1372,9 @@ var CanvasAction = (function () {
         }
         var el = actionElements[focusedIndex];
         console.log('[CanvasAction] Execute:', el.actionType, '|', el.actionValue);
+        var _eId = el.id !== undefined ? String(el.id) : '';
+        var _eNm = el.name !== undefined ? String(el.name) : '';
+        _lastFocusedElementId = _eId + (_eNm ? ('_' + _eNm) : '') || null;
 
         if      (el.actionType === 'app')         handleAppAction(el);
         else if (el.actionType === 'dynamicPage') handleDynamicPageAction(el);
@@ -1515,17 +1528,18 @@ var CanvasAction = (function () {
                             // Restore backgrounds (may have been set transparent for video mode)
                             try { document.body.style.background = ''; } catch(_e) {}
 
-                            // ── Render the next template page NOW (during loading time)
-                            //    The page is drawn while the loading overlay is still visible.
-                            //    HideLoading is deferred until the full 6-second window closes.
+                            // ── Pass hideLoadingAfterMinTime as onReady so the loader
+                            //    hides only AFTER the bg image/video is fully painted.
+                            //    This fixes the white flash on first visit (image bg) and
+                            //    the black flash (video bg). On revisit the image is already
+                            //    in CanvasBase cache so render is synchronous — no flash.
                             macro("#mainContent").html('');
                             if (typeof Util !== 'undefined' && Util.ourHotelPage) {
-                                macro("#mainContent").html(Util.ourHotelPage());
+                                macro("#mainContent").html(Util.ourHotelPage(hideLoadingAfterMinTime));
                                 macro("#mainContent").show();
+                            } else {
+                                hideLoadingAfterMinTime();
                             }
-
-                            // Hide loading only after the minimum 6-second window
-                            hideLoadingAfterMinTime();
 
                         } else {
                             console.error('[CanvasAction] API status false');
