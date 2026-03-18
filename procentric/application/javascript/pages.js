@@ -145,9 +145,16 @@ Util.languageSelection = function () {
   Text += "  </div>";
 
   Text += '  <div class="buttons-welcome-container">';
-  // Welcome text
-  Text +=
-    '<h1 class="language-welcome top_texts_welcom">Welcome Dear Guest</h1>';
+
+  // Welcome / caption text — resolved from page_caption template
+  var pageCaption = (Main.templateApiData && Main.templateApiData.page_caption) || {};
+  var captionText  = resolvePlaceholders(pageCaption.caption_text  || "Welcome Dear Guest");
+  var guestMessage = resolvePlaceholders(pageCaption.guest_message || "");
+
+  Text += '<h1 class="language-welcome top_texts_welcom">' + captionText + '</h1>';
+  if (guestMessage) {
+    Text += '<p class="language-guest-message">' + guestMessage + '</p>';
+  }
 
   Text += '<div class="line"></div>';
 
@@ -242,7 +249,17 @@ Util.homePageHtml = function () {
   Text += "  <div>";
   // Right side: Greeting + Room + Language
   Text += '  <div class="header-right">';
-  Text += '    <span class="greeting">Hi, Dear ' + guestName + "</span>";
+
+  // Resolved greeting from page_caption.guest_name template
+  var homeCaption    = (Main.templateApiData && Main.templateApiData.page_caption) || {};
+  var greetingTmpl   = homeCaption.guest_name || "Hi, Dear {{guestName}}";
+  var resolvedGreeting = resolvePlaceholders(greetingTmpl);
+  if(guestName) {
+    console.log("guestName------------------->", guestName)
+    Text += '    <span class="greeting">' + resolvedGreeting + "</span>";
+  }else {
+    Text += '    <span class="greeting">' +"Hi, Dear Guest"+ "</span>";
+  }
   Text +=
     '    <div class="room-number">' + Main.deviceProfile.room_number + "</div>";
   Text += '    <div id="lang_change_icon" class="language-selector">';

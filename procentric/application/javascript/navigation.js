@@ -58,80 +58,72 @@ Navigation.updateDownloadProgress = function (targetPercent) {
 Navigation.languagePageNavigation = function (event) {
   var keycode = window.event ? event.keyCode : event.which;
   var id = macro(".imageFocus").attr("id");
+
+  /**
+   * Updates the language-selection page texts (.top_texts_welcom,
+   * .language-guest-message, .select_lan, .terms_cond) based on the
+   * language button at index `btnIndex`.
+   *
+   * caption_text and guest_message come from the page_caption template
+   * and are resolved through resolvePlaceholders so that any
+   * {{propertyName}} / {{guestName}} tokens are filled in correctly.
+   *
+   * Fallback strings are used when page_caption is not configured.
+   */
+  function updatePageTexts(btnIndex) {
+    var btn = macro("#lang_btn-" + btnIndex);
+    if (!btn.length) return;
+
+    var langName = btn.find(".lang-text").text().toUpperCase();
+
+    var pageCaption = (Main.templateApiData && Main.templateApiData.page_caption) || {};
+    var captionText  = resolvePlaceholders(pageCaption.caption_text  || "");
+    var guestMessage = resolvePlaceholders(pageCaption.guest_message || "");
+
+    // Language-specific overrides for select / terms strings
+    var selectText, termsText;
+
+    if (langName === "FRENCH") {
+      if (!captionText) captionText = "Bienvenue";
+      selectText = "Veuillez sélectionner votre langue";
+      termsText  = "Vous acceptez nos termes et conditions ainsi que notre politique de confidentialité.";
+    } else if (langName === "SPANISH") {
+      if (!captionText) captionText = "Bienvenidos";
+      selectText = "Seleccione su idioma";
+      termsText  = "Acepta nuestros términos y condiciones y nuestra política de privacidad.";
+    } else {
+      // Default / English
+      if (!captionText) captionText = "Welcome Dear Guest";
+      selectText = "Please Select Your Language";
+      termsText  = "By clicking, you agree to our Terms & Conditions and Privacy Policy.";
+    }
+
+    macro(".top_texts_welcom").text(captionText);
+    macro(".language-guest-message").text(guestMessage);
+    macro(".select_lan").text(selectText);
+    macro(".terms_cond").text(termsText);
+
+    console.log("[languagePageNavigation] lang:", langName, "| caption:", captionText, "| message:", guestMessage);
+  }
+
   switch (keycode) {
     case tvKeyCode.ArrowLeft: {
       var splitData = id.split("-");
-      if (macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).length > 0) {
+      var prevIndex = parseInt(splitData[1]) - 1;
+      if (macro("#lang_btn-" + prevIndex).length > 0) {
         macro(".imageFocus").removeClass("imageFocus");
-        macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).addClass(
-          "imageFocus"
-        );
-      }
-      console.log("parseInt(splitData[1]) - 1)).text()------->", macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).text())
-      if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).text() == "FRENCH"
-      ) {
-        macro(".top_texts_welcom").text("Bienvenue");
-        macro(".select_lan").text("Veuillez sélectionner votre langue");
-        macro(".terms_cond").text(
-          "Vous acceptez nos termes et conditions ainsi que notre politique de confidentialité."
-        );
-      } else if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).text() == "ENGLISH"
-      ) {
-        macro(".top_texts_welcom").text("Welcome Dear Guest");
-        macro(".select_lan").text("Please Select Your Language");
-        macro(".terms_cond").text(
-          "You agree to our Terms & Conditions and Privacy Policy. "
-        );
-      } else if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) - 1)).text() == "SPANISH"
-      ) {
-        macro(".top_texts_welcom").text("Bienvenidos");
-        macro(".select_lan").text("Seleccione su idioma");
-        macro(".terms_cond").text(
-          "Acepta nuestros términos y condiciones y nuestra política de privacidad."
-        );
+        macro("#lang_btn-" + prevIndex).addClass("imageFocus");
+        updatePageTexts(prevIndex);
       }
       break;
     }
     case tvKeyCode.ArrowRight: {
       var splitData = id.split("-");
-      if (parseInt(splitData[1]) == 0) {
+      var nextIndex = parseInt(splitData[1]) + 1;
+      if (macro("#lang_btn-" + nextIndex).length > 0) {
         macro(".imageFocus").removeClass("imageFocus");
-        macro("#lang_btn-1").addClass("imageFocus");
-      } else if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) + 1)).length > 0
-      ) {
-        macro(".imageFocus").removeClass("imageFocus");
-        macro("#lang_btn-" + (parseInt(splitData[1]) + 1)).addClass(
-          "imageFocus"
-        );
-      }
-      if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) + 1)).text() == "FRENCH"
-      ) {
-        macro(".top_texts_welcom").text("Bienvenue");
-        macro(".select_lan").text("Veuillez sélectionner votre langue");
-        macro(".terms_cond").text(
-          "vous acceptez nos termes et conditions ainsi que notre politique de confidentialité."
-        );
-      } else if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) + 1)).text() == "ENGLISH"
-      ) {
-        macro(".top_texts_welcom").text("Welcome Dear Guest");
-        macro(".select_lan").text("Please Select Your Language");
-        macro(".terms_cond").text(
-          "you agree to our Terms & Conditions and Privacy Policy. "
-        );
-      } else if (
-        macro("#lang_btn-" + (parseInt(splitData[1]) + 1)).text() == "SPANISH"
-      ) {
-        macro(".top_texts_welcom").text("Bienvenidos");
-        macro(".select_lan").text("Seleccione su idioma");
-        macro(".terms_cond").text(
-          "acepta nuestros términos y condiciones y nuestra política de privacidad."
-        );
+        macro("#lang_btn-" + nextIndex).addClass("imageFocus");
+        updatePageTexts(nextIndex);
       }
       break;
     }

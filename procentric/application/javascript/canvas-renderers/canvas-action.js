@@ -718,14 +718,26 @@ var CanvasAction = (function () {
             textX = el.width / 2;   /* center */
         }
 
-        /* vertical â€” shift away from icon when present */
+        /* vertical -- textAlignVertical always wins; icon-relative only as fallback */
         var hasIcon     = el.actionIcon && el.actionIcon.trim() !== '';
         var iconSize    = el.iconSize    || 60;
         var iconSpacing = el.iconSpacing || 12;
         var iconPos     = el.iconPosition || 'top';
         var textY;
 
-        if (hasIcon) {
+        /* Check explicit vertical alignment FIRST -- takes priority over
+           icon-relative positioning so cards with iconPosition=center and
+           textAlignVertical=bottom correctly show text pinned to bottom.  */
+        var vAlign = el.textAlignVertical || '';
+
+        if (vAlign === 'top') {
+            textY = fontSize / 2 + hPad;
+        } else if (vAlign === 'bottom') {
+            textY = el.height - fontSize / 2 - hPad;
+        } else if (vAlign === 'middle' || vAlign === 'center') {
+            textY = el.height / 2;
+        } else if (hasIcon) {
+            /* No explicit textAlignVertical -- fall back to icon-relative */
             switch (iconPos) {
                 case 'top':
                     textY = iconSpacing + iconSize + iconSpacing + fontSize / 2;
@@ -748,15 +760,8 @@ var CanvasAction = (function () {
                     break;
             }
         } else {
-            var vAlign = el.textAlignVertical || 'middle';  /* default: vertical center */
-            if (vAlign === 'top') {
-                textY = fontSize / 2 + hPad;
-            } else if (vAlign === 'bottom') {
-                textY = el.height - fontSize / 2 - hPad;
-            } else {
-                /* 'middle' | 'center' | anything else -> vertical center */
-                textY = el.height / 2;
-            }
+            /* No icon, no explicit vAlign -- default to vertical center */
+            textY = el.height / 2;
         }
 
         /* shadow for readability over images / video */

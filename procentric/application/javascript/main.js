@@ -304,7 +304,7 @@ Main.guestInfo = function (callback) {
       Main.HideLoading();
       if (result.status === true) {
         Main.guestInfoData = result.result;
-        guestName = result.result.g_name ? result.result.g_name : "Guest";
+        guestName = result.result.g_name ? result.result.g_name : null;
       }
 
       if (typeof callback === "function") {
@@ -352,7 +352,7 @@ Main.guestInfoAfterInterval = function () {
         console.log("[GuestInfo Interval] Response:", result.result);
 
         Main.guestInfoData = result.result;
-        guestName = result.result.g_name ? result.result.g_name : "Guest";
+        guestName = result.result.g_name ? result.result.g_name : null;
 
         var tvCmd = result.result.tv_cmd;
         var hasCommand = 

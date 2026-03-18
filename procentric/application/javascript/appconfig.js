@@ -519,6 +519,35 @@ function getCustomAppUrl(data,lgAppId) {
     }
 }
 
+function resolvePlaceholders(text) {
+    if (!text) return "";
+
+    var guest   = (Main.guestInfoData)                      || {};
+    var prop    = (Main.deviceProfile && Main.deviceProfile.property_detail) || {};
+    var roomNum = (Main.deviceProfile && Main.deviceProfile.room_number)     || "";
+
+    var map = {
+        "{{guestName}}":       guest.g_name      || "",
+        "{{checkInDate}}":     guest.g_checkin   || "",
+        "{{checkOutDate}}":    guest.g_checkout  || "",
+        "{{propertyName}}":    prop.name         || "",
+        "{{propertyCity}}":    prop.city         || "",
+        "{{propertyAddress}}": prop.address      || "",
+        "{{propertyState}}":   prop.state        || "",
+        "{{propertyCountry}}": prop.country      || "",
+        "{{roomNumber}}":      roomNum
+    };
+
+    var result = text;
+    for (var token in map) {
+        if (map.hasOwnProperty(token)) {
+        // Replace all occurrences of the token
+        result = result.split(token).join(map[token]);
+        }
+    }
+    return result;
+}
+
 function normalizeId(value) {
   if (
     value === null ||

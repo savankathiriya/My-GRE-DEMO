@@ -112,6 +112,11 @@
     margin: 0 0 15px 0;
   }
 
+  .language-guest-message {
+    font-size: 16px;
+    margin: 0 0 8px 0;
+  }
+
   .line {
     margin: 20px auto;
   }
@@ -337,7 +342,7 @@
   }
 
   .home-logo {
-    width: 90px;
+    height: 140px;
   }
 
   .greeting {

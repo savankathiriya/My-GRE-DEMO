@@ -10,6 +10,50 @@ var CanvasShapes = (function() {
     'use strict';
 
     /**
+     * Bake el.fillOpacity into a color string.
+     *
+     * el.fillOpacity (0–1) controls the fill alpha independently of the
+     * element-level el.opacity (which is applied to the whole element via
+     * ctx.globalAlpha in CanvasBase.applyTransformations).
+     *
+     * We bake it into the color rather than touching globalAlpha so that
+     * the border/stroke is NOT affected by fillOpacity.
+     *
+     * @param  {string} color  - hex (#rrggbb / #rrggbbaa) or any CSS color
+     * @param  {object} el     - element data; reads el.fillOpacity
+     * @returns {string}       - original color, or rgba() with alpha applied
+     */
+    function _applyFillOpacity(color, el) {
+        if (typeof el.fillOpacity === 'undefined' || el.fillOpacity === 1) {
+            return color;
+        }
+        var alpha = Math.max(0, Math.min(1, el.fillOpacity));
+        if (!color || color === 'transparent') return 'rgba(0,0,0,0)';
+
+        // Already rgba — replace the existing alpha component
+        if (color.indexOf('rgba') === 0) {
+            return color.replace(/,[^,]+\)$/, ',' + alpha + ')');
+        }
+        // rgb() — upgrade to rgba()
+        if (color.indexOf('rgb') === 0) {
+            return color.replace('rgb(', 'rgba(').replace(')', ',' + alpha + ')');
+        }
+        // hex #rrggbb or #rrggbbaa — extract r,g,b and apply alpha
+        if (color.charAt(0) === '#') {
+            var hex = color.slice(1);
+            if (hex.length === 3) {
+                hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            }
+            var r = parseInt(hex.slice(0, 2), 16);
+            var g = parseInt(hex.slice(2, 4), 16);
+            var b = parseInt(hex.slice(4, 6), 16);
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+        }
+        // Named colors or unknown formats — return as-is
+        return color;
+    }
+
+    /**
      * Main render function - routes to specific shape renderer
      */
     function render(ctx, el) {
@@ -79,7 +123,7 @@ var CanvasShapes = (function() {
     function renderArrow(ctx, el) {
         var direction = el.direction || 'right';
         var headSize = el.arrowHeadSize || 0.3; // Fraction of width/height
-        var bgColor = el.backgroundColor || '#f59e0b';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#f59e0b', el);
         var borderColor = el.borderColor || '#d97706';
         var borderWidth = el.borderWidth || 2;
 
@@ -176,7 +220,7 @@ var CanvasShapes = (function() {
      * Render DIAMOND shape
      */
     function renderDiamond(ctx, el) {
-        var bgColor = el.backgroundColor || '#06b6d4';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#06b6d4', el);
         var borderColor = el.borderColor || '#0891b2';
         var borderWidth = el.borderWidth || 2;
 
@@ -203,7 +247,7 @@ var CanvasShapes = (function() {
      */
     function renderTriangle(ctx, el) {
         var direction = el.direction || 'up';
-        var bgColor = el.backgroundColor || '#10b981';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#10b981', el);
         var borderColor = el.borderColor || '#059669';
         var borderWidth = el.borderWidth || 2;
 
@@ -251,13 +295,16 @@ var CanvasShapes = (function() {
      * Render LINE shape
      */
     function renderLine(ctx, el) {
-        var bgColor = el.backgroundColor || '#31dd53';
-        var strokeOpacity = typeof el.strokeOpacity !== 'undefined' ? el.strokeOpacity : 1;
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#31dd53', el);
+
+        // el.strokeOpacity is an optional additional multiplier on top of el.opacity.
+        // el.opacity is already set on ctx.globalAlpha by applyTransformations.
+        if (typeof el.strokeOpacity !== 'undefined' && el.strokeOpacity !== 1) {
+            var baseOpacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
+            ctx.globalAlpha = baseOpacity * el.strokeOpacity;
+        }
 
         ctx.fillStyle = bgColor;
-        ctx.globalAlpha = strokeOpacity;
-
-        // Line is rendered as a filled rectangle
         ctx.fillRect(0, 0, el.width, el.height);
     }
 
@@ -265,7 +312,7 @@ var CanvasShapes = (function() {
      * Render CIRCLE shape
      */
     function renderCircle(ctx, el) {
-        var bgColor = el.backgroundColor || '#ef4444';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#ef4444', el);
         var borderColor = el.borderColor || '#dc2626';
         var borderWidth = el.borderWidth || 2;
 
@@ -290,7 +337,7 @@ var CanvasShapes = (function() {
      * Render RECTANGLE shape
      */
     function renderRectangle(ctx, el) {
-        var bgColor = el.backgroundColor || '#3b82f6';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#3b82f6', el);
         var borderColor = el.borderColor || '#1e40af';
         var borderWidth = el.borderWidth || 2;
         var borderRadius = el.borderRadius || 0;
@@ -331,7 +378,7 @@ var CanvasShapes = (function() {
      * Render regular polygon (pentagon, hexagon, etc.)
      */
     function renderPolygon(ctx, el, sides) {
-        var bgColor = el.backgroundColor || '#8b5cf6';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#8b5cf6', el);
         var borderColor = el.borderColor || '#7c3aed';
         var borderWidth = el.borderWidth || 2;
 
@@ -369,7 +416,7 @@ var CanvasShapes = (function() {
     function renderStar(ctx, el) {
         var points = el.points || 5;
         var innerRadius = el.innerRadius || 0.5; // Fraction of outer radius
-        var bgColor = el.backgroundColor || '#eab308';
+        var bgColor = _applyFillOpacity(el.backgroundColor || '#eab308', el);
         var borderColor = el.borderColor || '#ca8a04';
         var borderWidth = el.borderWidth || 2;
 
@@ -454,6 +501,8 @@ var CanvasShapes = (function() {
 
         if (mCtx) {
             /* Reset and fake an el with x=0,y=0 for the mini canvas */
+            /* Opacity is handled by wrap.style.opacity — always draw at full alpha */
+            mCtx.globalAlpha = 1;
             var fakeEl = {};
             for (var k in el) { if (el.hasOwnProperty(k)) fakeEl[k] = el[k]; }
             fakeEl.x = 0; fakeEl.y = 0; fakeEl.opacity = 1;
@@ -508,7 +557,7 @@ var CanvasShapes = (function() {
     function _drawCircle(ctx, el) {
         var cx = el.width/2, cy = el.height/2;
         var r  = Math.min(el.width, el.height)/2;
-        ctx.fillStyle   = el.backgroundColor || '#ef4444';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#ef4444', el);
         ctx.strokeStyle = el.borderColor     || '#dc2626';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI);
@@ -517,7 +566,7 @@ var CanvasShapes = (function() {
     }
     function _drawRect(ctx, el) {
         var br = el.borderRadius || 0;
-        ctx.fillStyle   = el.backgroundColor || '#3b82f6';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#3b82f6', el);
         ctx.strokeStyle = el.borderColor     || '#1e40af';
         ctx.lineWidth   = el.borderWidth      || 2;
         if (br > 0 && typeof CanvasBase !== 'undefined') {
@@ -530,13 +579,17 @@ var CanvasShapes = (function() {
         }
     }
     function _drawLine(ctx, el) {
-        ctx.fillStyle   = el.backgroundColor || '#31dd53';
-        ctx.globalAlpha = typeof el.strokeOpacity !== 'undefined' ? el.strokeOpacity : 1;
+        ctx.fillStyle = _applyFillOpacity(el.backgroundColor || '#31dd53', el);
+        // Note: element-level opacity lives on the wrapper div — do NOT set globalAlpha here.
+        // strokeOpacity is a legacy additional multiplier on the fill only.
+        if (typeof el.strokeOpacity !== 'undefined' && el.strokeOpacity !== 1) {
+            ctx.globalAlpha = el.strokeOpacity;
+        }
         ctx.fillRect(0, 0, el.width, el.height);
     }
     function _drawTriangle(ctx, el) {
         var d = el.direction || 'up';
-        ctx.fillStyle   = el.backgroundColor || '#10b981';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#10b981', el);
         ctx.strokeStyle = el.borderColor     || '#059669';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath();
@@ -550,7 +603,7 @@ var CanvasShapes = (function() {
         if ((el.borderWidth||0) > 0) ctx.stroke();
     }
     function _drawDiamond(ctx, el) {
-        ctx.fillStyle   = el.backgroundColor || '#06b6d4';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#06b6d4', el);
         ctx.strokeStyle = el.borderColor     || '#0891b2';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath();
@@ -562,7 +615,7 @@ var CanvasShapes = (function() {
     function _drawArrow(ctx, el) {
         var direction = el.direction || 'right';
         var headSize  = el.arrowHeadSize || 0.3;
-        ctx.fillStyle   = el.backgroundColor || '#f59e0b';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#f59e0b', el);
         ctx.strokeStyle = el.borderColor     || '#d97706';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath();
@@ -602,7 +655,7 @@ var CanvasShapes = (function() {
     function _drawPolygon(ctx, el, sides) {
         var cx = el.width / 2, cy = el.height / 2;
         var r  = Math.min(el.width, el.height) / 2;
-        ctx.fillStyle   = el.backgroundColor || '#8b5cf6';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#8b5cf6', el);
         ctx.strokeStyle = el.borderColor     || '#7c3aed';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath();
@@ -621,7 +674,7 @@ var CanvasShapes = (function() {
         var cx = el.width / 2, cy = el.height / 2;
         var outerR = Math.min(el.width, el.height) / 2;
         var innerR = outerR * innerRatio;
-        ctx.fillStyle   = el.backgroundColor || '#eab308';
+        ctx.fillStyle   = _applyFillOpacity(el.backgroundColor || '#eab308', el);
         ctx.strokeStyle = el.borderColor     || '#ca8a04';
         ctx.lineWidth   = el.borderWidth      || 2;
         ctx.beginPath();

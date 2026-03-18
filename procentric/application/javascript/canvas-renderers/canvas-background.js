@@ -157,9 +157,59 @@ var CanvasBackground = (function () {
         var muted   = config.backgroundVideoMuted !== false;
         var isHls   = src.toLowerCase().indexOf('.m3u8') !== -1;
 
+        /* ── Resolution-fallback URL list ────────────────────────────────
+           LG webOS hardware decoders have a max decode resolution (usually
+           1920x1080 or 1280x720).  A 2560x1440 / 4K source ALWAYS triggers
+           MEDIA_ERR_DECODE regardless of how many times we retry the same
+           URL.  Instead, on each decode error we advance to the next
+           lower-resolution candidate from the CDN.
+
+           Pixabay CDN pattern (most common):
+             _large.mp4   original (may be 2K/4K — fails on LG)
+             _medium.mp4  ~1280x720  — usually works on LG
+             _small.mp4   ~640x360   — fallback
+             _tiny.mp4    ~426x240   — last resort
+        ──────────────────────────────────────────────────────────────── */
+        function _buildFallbackList(originalSrc) {
+            var list  = [originalSrc];
+            var lower = originalSrc.toLowerCase();
+
+            if (lower.indexOf('pixabay.com/video') !== -1) {
+                var variants = ['_medium.mp4', '_small.mp4', '_tiny.mp4'];
+                for (var vi = 0; vi < variants.length; vi++) {
+                    var v = variants[vi];
+                    if (lower.indexOf(v) !== -1) continue; /* already this variant */
+                    var candidate = originalSrc
+                        .replace(/_large\.mp4/i,  v)
+                        .replace(/_medium\.mp4/i, v)
+                        .replace(/_small\.mp4/i,  v)
+                        .replace(/_tiny\.mp4/i,   v);
+                    /* If no suffix matched, append before any query string */
+                    if (candidate === originalSrc) {
+                        var qi = originalSrc.indexOf('?');
+                        if (qi === -1) {
+                            candidate = originalSrc.replace(/\.mp4$/i, v);
+                        } else {
+                            candidate = originalSrc.substring(0, qi)
+                                        .replace(/\.mp4$/i, v)
+                                        + originalSrc.substring(qi);
+                        }
+                    }
+                    if (candidate !== originalSrc && list.indexOf(candidate) === -1) {
+                        list.push(candidate);
+                    }
+                }
+            }
+            return list;
+        }
+
+        var _srcList  = _buildFallbackList(src);
+        var _srcIndex = 0;   /* index into _srcList currently in use */
+
         console.log('[CanvasBackground] BG video src:', src,
                     '| fit:', fitMode, '| loop:', doLoop,
-                    '| muted:', muted, '| isHls:', isHls);
+                    '| muted:', muted, '| isHls:', isHls,
+                    '| fallback candidates:', _srcList.length);
 
         /* ── wrapper div (full-screen, behind canvas) ─────────────── */
         var wrap            = document.createElement('div');
@@ -235,53 +285,85 @@ var CanvasBackground = (function () {
                         + ' @' + offX + ',' + offY);
         }
 
-        /* ── play helper (with muted fallback) ──────────────────────── */
+        /* ── play helper: guards against concurrent play() calls ──────────
+           "play() interrupted by pause()" on LG webOS is caused by calling
+           play() while a prior play() promise is still pending.
+           The _playPending flag prevents this race.                        */
+        var _playPending = false;
         function _tryPlay() {
             if (!video || !video.parentNode) return;
-            var p = video.play();
-            if (p !== undefined) {
-                p.catch(function (err) {
+            if (_playPending) return;
+            _playPending = true;
+            var p;
+            try { p = video.play(); } catch(e) { _playPending = false; return; }
+            if (p && typeof p.then === 'function') {
+                p.then(function () {
+                    _playPending = false;
+                }).catch(function (err) {
+                    _playPending = false;
+                    if (err.name === 'AbortError') return; /* superseded -- safe to ignore */
                     console.warn('[CanvasBackground] play() rejected:', err.message);
                     if (!video.muted) {
                         video.muted = true;
-                        video.play().catch(function (e) {
-                            console.error('[CanvasBackground] Muted play failed:', e.message);
+                        _playPending = true;
+                        video.play().then(function() {
+                            _playPending = false;
+                        }).catch(function(e2) {
+                            _playPending = false;
+                            console.error('[CanvasBackground] Muted play also failed:', e2.message);
                         });
                     }
                 });
+            } else {
+                _playPending = false;
             }
         }
 
+        /* ── fallback to next lower-resolution candidate ────────────────
+           Called on MEDIA_ERR_DECODE / MEDIA_ERR_SRC_NOT_SUPPORTED.
+           Advances _srcIndex and reloads the video with the next URL.     */
+        function _tryNextSrc() {
+            _srcIndex++;
+            if (_srcIndex >= _srcList.length) {
+                console.error('[CanvasBackground] All fallback URLs exhausted -- video cannot play on this LG decoder');
+                return;
+            }
+            var nextSrc = _srcList[_srcIndex];
+            console.log('[CanvasBackground] Trying fallback URL', _srcIndex + '/' + (_srcList.length - 1) + ':', nextSrc);
+            _playPending = false;
+            _started     = false;
+            video.src    = nextSrc;
+            video.load();
+            setTimeout(_tryPlay, 600);
+        }
+
         /* ── event listeners ─────────────────────────────────────────── */
-        var started = false;
+        var _started = false;
 
         video.addEventListener('loadedmetadata', function () {
             console.log('[CanvasBackground] BG video metadata:',
                         video.videoWidth + 'x' + video.videoHeight);
             _applyVideoFit();
-            /* ── FIX: Reset hcap plane to full screen early ──────────────
-               A prior page's element video may have set the hardware plane
-               to a small rect via hcap.video.setVideoSize().  Reset it here
-               (before 'playing' fires) so the very first bg-video frame
-               uses the correct full-screen dimensions.                      */
             _resetHcapVideoSizeFullScreen(screenW, screenH);
         });
 
+        /* canplay fires as soon as enough data is buffered -- more
+           reliable than a fixed timer, especially on slow hotel networks  */
+        video.addEventListener('canplay', function () {
+            if (!_started) { _tryPlay(); }
+        });
+
         video.addEventListener('playing', function () {
-            _applyVideoFit();   /* re-apply in case timing differs on LG firmware */
-            if (!started) {
-                started = true;
-                console.log('[CanvasBackground] BG video playing OK');
-                /* ── FIX: Belt-and-suspenders full-screen reset on first play ──
-                   Ensures the hcap hardware decode plane covers the full screen
-                   even if the 'loadedmetadata' reset fired before hcap was ready,
-                   or if CanvasVideo.cleanup() hasn't finished its async reset yet. */
+            _applyVideoFit();
+            if (!_started) {
+                _started = true;
+                console.log('[CanvasBackground] BG video playing OK | src index:', _srcIndex,
+                            '| url:', _srcList[_srcIndex]);
                 _resetHcapVideoSizeFullScreen(screenW, screenH);
             }
         });
 
         video.addEventListener('ended', function () {
-            /* Belt-and-suspenders restart alongside loop attribute */
             console.log('[CanvasBackground] BG video ended, restarting');
             video.currentTime = 0;
             _tryPlay();
@@ -292,39 +374,63 @@ var CanvasBackground = (function () {
         });
 
         video.addEventListener('suspend', function () {
-            if (!started) {
+            if (!_started) {
                 setTimeout(function () {
-                    if (!started) {
+                    if (!_started && video && video.parentNode) {
                         console.log('[CanvasBackground] BG video retry after suspend');
                         video.load();
-                        _tryPlay();
+                        setTimeout(_tryPlay, 400);
                     }
                 }, 1500);
             }
         });
 
+        /* ── error handler ───────────────────────────────────────────────
+           MEDIA_ERR_DECODE (3): almost always a resolution/codec mismatch
+             on LG webOS (e.g. 2560x1440 source exceeds HW decoder limit).
+             → try next lower-resolution fallback URL immediately.
+           MEDIA_ERR_SRC_NOT_SUPPORTED (4): format not supported.
+             → also try next fallback URL.
+           MEDIA_ERR_NETWORK (2): transient on hotel WiFi.
+             → reload and retry same URL once (max 2 times) before giving up.
+           MEDIA_ERR_ABORTED (1): user/browser aborted, do nothing.          */
+        var _networkRetries = 0;
         video.addEventListener('error', function () {
-            var code = video.error ? video.error.code : '?';
-            console.error('[CanvasBackground] BG video error code', code, '| src:', src);
-            switch (code) {
-                case 1: console.error('[CanvasBackground]   MEDIA_ERR_ABORTED'); break;
-                case 2: console.error('[CanvasBackground]   MEDIA_ERR_NETWORK -- check URL'); break;
-                case 3: console.error('[CanvasBackground]   MEDIA_ERR_DECODE'); break;
-                case 4: console.error('[CanvasBackground]   MEDIA_ERR_SRC_NOT_SUPPORTED'); break;
+            var code = video.error ? video.error.code : 0;
+            var labels = {1:'ABORTED', 2:'NETWORK', 3:'DECODE', 4:'SRC_NOT_SUPPORTED'};
+            console.error('[CanvasBackground] BG video error code', code,
+                          '(' + (labels[code] || 'UNKNOWN') + ') | src:', _srcList[_srcIndex]);
+
+            if (code === 3 || code === 4) {
+                /* Decoder/format failure -- retrying same URL is pointless.
+                   Move straight to next lower-resolution fallback.          */
+                _tryNextSrc();
+
+            } else if (code === 2 && _networkRetries < 2) {
+                /* Transient network error -- reload same URL */
+                _networkRetries++;
+                var delay = _networkRetries * 2000;
+                console.log('[CanvasBackground] Network error, retrying in', delay + 'ms');
+                setTimeout(function () {
+                    if (!video || !video.parentNode) return;
+                    _playPending = false;
+                    _started     = false;
+                    video.src    = _srcList[_srcIndex];
+                    video.load();
+                    setTimeout(_tryPlay, 500);
+                }, delay);
             }
         });
 
         /* ── source assignment ───────────────────────────────────────── */
         if (isHls) {
-            /* <source type="application/x-mpegURL"> triggers the native LG HLS
-               demuxer -- same approach as canvas-action.js for HLS cards        */
             var hlsSrc  = document.createElement('source');
             hlsSrc.src  = src;
             hlsSrc.type = 'application/x-mpegURL';
             video.appendChild(hlsSrc);
             console.log('[CanvasBackground] HLS <source> set:', src);
         } else {
-            video.src = src;
+            video.src = _srcList[0];   /* start with first (original) candidate */
         }
 
         /* ── insert into DOM behind the canvas ───────────────────────── */
@@ -347,12 +453,9 @@ var CanvasBackground = (function () {
         overlayDiv.style.background = '#000000';
         overlayDiv.style.opacity    = String(Math.max(0, Math.min(1, 1 - opacity)));
         overlayDiv.style.pointerEvents = 'none';
-        overlayDiv.style.zIndex     = '2';   /* above video (z-index:0 default) */
+        overlayDiv.style.zIndex     = '2';
         wrap.appendChild(overlayDiv);
 
-        /* Insert BEFORE the canvas so the video sits behind it.
-           The canvas will draw a transparent/dark rect for bgType=video,
-           allowing the video overlay to show through.                     */
         var canvas = document.getElementById('templateCanvas');
         if (canvas && canvas.parentNode === container) {
             container.insertBefore(wrap, canvas);
@@ -365,14 +468,14 @@ var CanvasBackground = (function () {
 
         console.log('[CanvasBackground] BG video wrap added to DOM (behind canvas)');
 
-        /* ── start playback ─────────────────────────────────────────── */
+        /* ── start playback ─────────────────────────────────────────────
+           canplay listener above fires _tryPlay() as soon as data is
+           ready.  This single 1 s timer is only a fallback for CDNs that
+           delay the canplay event.  The double-timer pattern that caused
+           "play() interrupted by pause()" has been removed.               */
         video.load();
-        setTimeout(function () { _tryPlay(); }, 500);
         setTimeout(function () {
-            if (!started) {
-                console.log('[CanvasBackground] BG video second play attempt');
-                _tryPlay();
-            }
+            if (!_started) { _tryPlay(); }
         }, 1500);
 
         /* ── HLS seamless-loop watchdog ──────────────────────────────
