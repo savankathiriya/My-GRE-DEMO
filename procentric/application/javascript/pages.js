@@ -80,7 +80,7 @@ Util.downloadingPage = function (progress) {
   return Text;
 };
 
-Util.activationHtml = function (deviceMac) {
+Util.activationHtml = function (deviceSerialNumber) {
   var Text = "";
   
   Text += '<div class="activation-container">';
@@ -98,8 +98,8 @@ Util.activationHtml = function (deviceMac) {
   Text += '<div id="qrImage" class="qr-code"></div>';
   Text += "</div>";
 
-  // Device MAC address
-  Text += '<p class="device-code">' + deviceMac + "</p>";
+  // Device serial number
+  Text += '<p class="device-code">' + deviceSerialNumber + "</p>";
 
   // Refresh timer
   Text +=

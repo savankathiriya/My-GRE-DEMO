@@ -137,6 +137,10 @@
             "VersionNo": 0.1
         },
         {
+            "FileName": "javascript/canvas-renderers/canvas-screenSaver.js",
+            "VersionNo": 0.1
+        },
+        {
             "FileName": "javascript/canvas-renderers/canvas-videoBgHelper.js",
             "VersionNo": 0.1
         }

@@ -44,6 +44,7 @@ var PlaylistPlayer = (function () {
     var _currentIndex = 0;
     var _slideTimer   = null;
     var _active       = false;
+    var _onComplete   = null;   // optional callback fired when last slide finishes naturally
 
     // Front slot always carries the real IDs that every canvas module uses
     var FRONT_CONT   = 'our-hotel-container';
@@ -304,8 +305,19 @@ var PlaylistPlayer = (function () {
     }
 
     // ─── slide sequencer ─────────────────────────────────────────────
-    function _showSlide(index) {
+    function _showSlide(index, _skipCount) {
         if (!_active) return;
+
+        // Guard against infinite skip loop when ALL templates are missing
+        _skipCount = (_skipCount || 0);
+        if (_skipCount >= _playlist.length) {
+            console.error('[PlaylistPlayer] All templates missing — cannot show any slide');
+            _active = false;
+            if (typeof _onComplete === 'function') {
+                var cb = _onComplete; _onComplete = null; cb();
+            }
+            return;
+        }
 
         var item = _playlist[index];
         if (!item) return;
@@ -314,7 +326,7 @@ var PlaylistPlayer = (function () {
         if (!templateData) {
             console.warn('[PlaylistPlayer] Template not cached for', item.template_uuid, '– skipping');
             _currentIndex = (index + 1) % _playlist.length;
-            _showSlide(_currentIndex);
+            _showSlide(_currentIndex, _skipCount + 1);
             return;
         }
 
@@ -343,7 +355,21 @@ var PlaylistPlayer = (function () {
 
                 var durationMs = _parseDurationMs(item.duration);
                 _slideTimer = setTimeout(function () {
-                    _currentIndex = (index + 1) % _playlist.length;
+                    var nextIndex = (index + 1) % _playlist.length;
+
+                    // If we have wrapped back to 0 AND a completion callback is set,
+                    // the playlist has finished one full cycle — notify the caller
+                    // (ScreenSaver) instead of looping automatically.
+                    if (nextIndex === 0 && typeof _onComplete === 'function') {
+                        console.log('[PlaylistPlayer] All slides shown — calling onComplete');
+                        _active = false;
+                        var cb = _onComplete;
+                        _onComplete = null;  // clear before calling to prevent double-fire
+                        cb();
+                        return;
+                    }
+
+                    _currentIndex = nextIndex;
                     _showSlide(_currentIndex);
                 }, durationMs);
             });
@@ -392,7 +418,7 @@ var PlaylistPlayer = (function () {
     }
 
     // ─── public API ───────────────────────────────────────────────────
-    function start(playlistData) {
+    function start(playlistData, onComplete) {
         var obj = null;
         if (Array.isArray(playlistData)) {
             for (var i = 0; i < playlistData.length; i++) {
@@ -414,6 +440,7 @@ var PlaylistPlayer = (function () {
         _templates    = {};
         _currentIndex = 0;
         _active       = true;
+        _onComplete   = (typeof onComplete === 'function') ? onComplete : null;
 
         console.log('[PlaylistPlayer] Starting "' + obj.name + '" (' + _playlist.length + ' slides)');
 
@@ -439,8 +466,183 @@ var PlaylistPlayer = (function () {
         });
     }
 
+    /**
+     * startFromCache(playlistData, templateCache, onComplete)
+     *
+     * Screen-saver variant of start().
+     * All playlist data and template data are already pre-fetched by
+     * ScreenSaver.init() — this function performs ZERO network requests.
+     *
+     * @param {object} playlistData   – result object from /json-play-list
+     * @param {object} templateCache  – map { template_uuid → templateResult }
+     * @param {function} onComplete   – called when all slides finish naturally
+     */
+    function startFromCache(playlistData, templateCache, onComplete) {
+        var obj = null;
+        if (Array.isArray(playlistData)) {
+            for (var i = 0; i < playlistData.length; i++) {
+                if (playlistData[i] && playlistData[i].is_active !== false) {
+                    obj = playlistData[i]; break;
+                }
+            }
+        } else if (playlistData && playlistData.play_list_json) {
+            obj = playlistData;
+        }
+
+        if (!obj || !Array.isArray(obj.play_list_json) || obj.play_list_json.length === 0) {
+            console.error('[PlaylistPlayer] startFromCache: No valid play_list_json found');
+            if (typeof onComplete === 'function') onComplete();
+            return;
+        }
+
+        _playlist     = obj.play_list_json;
+        _currentIndex = 0;
+        _active       = true;
+        _onComplete   = (typeof onComplete === 'function') ? onComplete : null;
+
+        // Copy ALL entries from the per-entry template cache into _templates.
+        // These were fetched once by Main.screenSaverInterval() — zero network needed.
+        _templates = {};
+        if (templateCache) {
+            for (var k in templateCache) {
+                if (Object.prototype.hasOwnProperty.call(templateCache, k)) {
+                    _templates[k] = templateCache[k];
+                }
+            }
+        }
+
+        console.log('[PlaylistPlayer] startFromCache "' + obj.name +
+                    '" (' + _playlist.length + ' slides)');
+
+        // Debug: confirm every slide template is present
+        _playlist.forEach(function (slide, idx) {
+            var uuid    = slide && slide.template_uuid;
+            var present = uuid && !!_templates[uuid];
+            console.log('[PlaylistPlayer] startFromCache slide[' + idx + '] uuid=' +
+                        uuid + ' inCache=' + present);
+        });
+
+        Main.addBackData('playlist');
+        view = 'playlist';
+        presentPagedetails.view = view;
+
+        macro('#mainContent').html('');
+        macro('#mainContent').html(Util.playlistPage());
+        macro('#mainContent').show();
+
+        Main.HideLoading();
+
+        var firstItem     = _playlist[0];
+        var firstTemplate = firstItem && _templates[firstItem.template_uuid];
+
+        if (!firstTemplate) {
+            console.error('[PlaylistPlayer] startFromCache: template not in cache for uuid=' +
+                          (firstItem && firstItem.template_uuid));
+            if (typeof onComplete === 'function') onComplete();
+            return;
+        }
+
+        // Wait for playlistPage() DOM to be fully injected before rendering
+        setTimeout(function () {
+            _showFirstSlide(firstItem, firstTemplate);
+        }, 150);
+    }
+
+    /**
+     * relaunchFromCache(playlistData, templateCache, onComplete)
+     *
+     * Round-robin variant — called for the 2nd, 3rd … Nth screen-saver playlist.
+     * The playlist view DOM already exists (set up by startFromCache on first launch).
+     * This function ONLY swaps the playlist content; it does NOT:
+     *   • call Main.addBackData()   — back-stack stays clean (one entry for all savers)
+     *   • rebuild #mainContent DOM  — existing slots are reused
+     *   • touch view / presentPagedetails.view — they stay 'playlist'
+     *
+     * @param {object}   playlistData  – result object from /json-play-list (cached)
+     * @param {object}   templateCache – map { template_uuid → templateResult } (cached)
+     * @param {function} onComplete    – called when all slides finish naturally
+     */
+    function relaunchFromCache(playlistData, templateCache, onComplete) {
+        var obj = null;
+        if (Array.isArray(playlistData)) {
+            for (var i = 0; i < playlistData.length; i++) {
+                if (playlistData[i] && playlistData[i].is_active !== false) {
+                    obj = playlistData[i]; break;
+                }
+            }
+        } else if (playlistData && playlistData.play_list_json) {
+            obj = playlistData;
+        }
+
+        if (!obj || !Array.isArray(obj.play_list_json) || obj.play_list_json.length === 0) {
+            console.error('[PlaylistPlayer] relaunchFromCache: No valid play_list_json');
+            if (typeof onComplete === 'function') onComplete();
+            return;
+        }
+
+        // Stop any running slide timer / animations from previous playlist
+        if (_slideTimer) { clearTimeout(_slideTimer); _slideTimer = null; }
+        _stopCanvasModules();
+
+        // Clear both canvas slots so previous content is fully gone
+        _cleanSlotCanvas(FRONT_CANVAS);
+        _cleanSlotCanvas(BACK_CANVAS);
+        _cleanSlotChildren(FRONT_CONT, FRONT_CANVAS);
+        _cleanSlotChildren(BACK_CONT,  BACK_CANVAS);
+
+        _playlist     = obj.play_list_json;
+        _currentIndex = 0;
+        _active       = true;
+        _onComplete   = (typeof onComplete === 'function') ? onComplete : null;
+
+        // Copy per-entry templates from Main.screenSaverData — zero network
+        _templates = {};
+        if (templateCache) {
+            for (var k in templateCache) {
+                if (Object.prototype.hasOwnProperty.call(templateCache, k)) {
+                    _templates[k] = templateCache[k];
+                }
+            }
+        }
+
+        console.log('[PlaylistPlayer] relaunchFromCache "' + obj.name +
+                    '" (' + _playlist.length + ' slides)');
+
+        // Debug: confirm every slide template is present
+        _playlist.forEach(function (slide, idx) {
+            var uuid    = slide && slide.template_uuid;
+            var present = uuid && !!_templates[uuid];
+            console.log('[PlaylistPlayer] relaunchFromCache slide[' + idx + '] uuid=' +
+                        uuid + ' inCache=' + present);
+        });
+
+        // Ensure front slot DOM exists; rebuild if it was wiped
+        var fc = document.getElementById(FRONT_CONT);
+        if (!fc) {
+            macro('#mainContent').html('');
+            macro('#mainContent').html(Util.playlistPage());
+            macro('#mainContent').show();
+        }
+
+        var firstItem     = _playlist[0];
+        var firstTemplate = firstItem && _templates[firstItem.template_uuid];
+
+        if (!firstTemplate) {
+            console.error('[PlaylistPlayer] relaunchFromCache: template not in cache for uuid=' +
+                          (firstItem && firstItem.template_uuid));
+            if (typeof onComplete === 'function') onComplete();
+            return;
+        }
+
+        // DOM/canvas settle delay
+        setTimeout(function () {
+            _showFirstSlide(firstItem, firstTemplate);
+        }, 150);
+    }
+
     function stop() {
-        _active = false;
+        _active     = false;
+        _onComplete = null;
         if (_slideTimer) { clearTimeout(_slideTimer); _slideTimer = null; }
 
         // Cleanup modules first (removes bg-video-wrap via CanvasBackground.cleanup)
@@ -455,8 +657,34 @@ var PlaylistPlayer = (function () {
         Main.previousPage();
     }
 
+    /**
+     * stopSilent()
+     *
+     * Stops playback and cleans up canvas/DOM but does NOT call
+     * Main.previousPage() — the caller (ScreenSaver) handles navigation.
+     */
+    function stopSilent() {
+        _active     = false;
+        _onComplete = null;
+        if (_slideTimer) { clearTimeout(_slideTimer); _slideTimer = null; }
+
+        _stopCanvasModules();
+        _cleanSlotCanvas(FRONT_CANVAS);
+        _cleanSlotCanvas(BACK_CANVAS);
+
+        try { document.body.style.background = ''; } catch (e) {}
+        console.log('[PlaylistPlayer] Stopped silently (no page navigation)');
+    }
+
     function isActive() { return _active; }
 
-    return { start: start, stop: stop, isActive: isActive };
+    return {
+        start:              start,
+        startFromCache:     startFromCache,
+        relaunchFromCache:  relaunchFromCache,
+        stop:               stop,
+        stopSilent:         stopSilent,
+        isActive:           isActive
+    };
 
 })();

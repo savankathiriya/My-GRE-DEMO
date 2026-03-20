@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.700"
+	appVersion:"v1.710"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -24,6 +24,7 @@ var tvKeyCode = {
 };
 // var deviceMac = null;
 var deviceMac = '1cf43ff843b4';
+var deviceSerialNumber = null;
 var deviceModelName = "";
 var lastNetworkType = "";
 var deviceIp  = null;
@@ -223,6 +224,7 @@ function startMacAcquisitionFlow() {
                 Main.deviceRegistrationAPi();
             } catch (e) { console.error("deviceRegistrationAPi error:", e); }
 
+            try { getDeviceSerialNumber(); } catch (e) { console.warn("getDeviceSerialNumber error:", e); }
             try { registerKeyCodeNumbers(); } catch (e) { console.warn("registerKeyCodeNumbers error:", e); }
             try { registerKeyCodeExit(); } catch (e) { console.warn("registerKeyCodeExit error:", e); }
             try { initHCAPPowerDefaults(); } catch (e) { console.warn("initHCAPPowerDefaults error:", e); }
@@ -276,6 +278,24 @@ function startMacAcquisitionFlow() {
             } catch (e) {}
         }
     });
+}
+
+function getDeviceSerialNumber() {
+  try {
+    hcap.property.getProperty({
+      key: 'serial_number',
+      onSuccess: function (response) {
+        var value = response && response.value ? response.value : null;
+
+        deviceSerialNumber = value;
+      },
+      onFailure: function (error) {
+        console.warn('[HCAP Property] Failed to get:', error && error.errorMessage);
+      }
+    });
+  } catch (ex) {
+    console.error('[HCAP Property] Exception:', 'serial_number', ex);
+  }
 }
 
 function registerKeyCodeNumbers() {

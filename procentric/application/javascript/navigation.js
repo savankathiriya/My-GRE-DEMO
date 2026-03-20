@@ -139,52 +139,49 @@ Navigation.languagePageNavigation = function (event) {
       Main.clickedLanguage = uuid;
 
       var textOfLang = id ? document.getElementById(id).textContent : "";
-      // Main.deviceActivity("close","page","welcome screen");
-      // Main.deviceActivity("open","page","Home screen");
 
-      // 1) Try fully-cached menu for this language
-      var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
-      
-      if (cached.length > 0) {
-        // Already image-cached items for this language
+      // Detect offline: provision-auth failed and we booted from localStorage cache
+      var isOffline = !!Main._restoredFromCache;
 
-        Main.renderHomePage(cached);
+      // Build filtered+sorted raw items for this language from homePageData
+      var rawItems = [];
+      if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
+        rawItems = Main.homePageData
+          .filter(function (x) { return x && x.is_active === true && x.language_uuid === uuid; })
+          .sort(function (a, b) { return (a.priority_order || 0) - (b.priority_order || 0); });
+      }
+
+      // Helper: load images from IDB (idbOnly=true when offline) then render.
+      // Always re-reads blobs from IDB even when cachedHomeByLang exists because
+      // blob: URLs are ephemeral and do not survive a cold TV reboot.
+      function loadAndRender(items) {
+        Main.cacheHomeImageAssetsByLanguage(items, uuid, function (cachedGroup) {
+          Main.cachedHomeByLang = Main.cachedHomeByLang || {};
+          Main.cachedHomeByLang[uuid] = cachedGroup || [];
+          Main.renderHomePage(Main.cachedHomeByLang[uuid]);
+        }, isOffline /* idbOnly — no XHR when offline */);
+      }
+
+      // Path 1 & 2: homePageData is available (online or restored from localStorage)
+      if (rawItems.length > 0) {
+        loadAndRender(rawItems);
         break;
       }
 
-      // 2) If we already have the raw homePageData, filter/sort for this language
-      if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
-        var items = Main.homePageData
-          .filter(function (x) {
-            return x && x.is_active === true && x.language_uuid === uuid;
-          })
-          .sort(function (a, b) {
-            return (a.priority_order || 0) - (b.priority_order || 0);
-          });
-
-        if (items.length) {
-          // Ensure images for this language are pulled from IndexedDB (no extra API)
-          Main.cacheHomeImageAssetsByLanguage(
-            items,
-            uuid,
-            function (cachedGroup) {
-              Main.cachedHomeByLang[uuid] = cachedGroup || [];
-              Main.renderHomePage(Main.cachedHomeByLang[uuid]);
-            }
-          );
-          break;
-        }
+      // Path 3: no homePageData at all
+      if (isOffline) {
+        // Cannot fetch from network — nothing to show
+        console.error('[Offline] No homePageData available for language:', uuid);
+        break;
       }
 
-      // 3) Last resort: we donâ€™t have data yet â†’ fetch once, then render
+      // Online fallback: fetch from network then render
       Main.getHomeData(function () {
-        var items2 =
-          (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
+        var items2 = (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
         if (items2.length) {
           Main.renderHomePage(items2);
         } else {
           console.error("No cached items available for language:", uuid);
-          // You can show a toast or fallback UI here if you want.
         }
       });
 
@@ -531,7 +528,7 @@ Navigation.homePageNavigation = function (event) {
         Main.jsontemplateApi(app_url);
       }
       else if (appUrl === "Playlist") {
-          Main.playlistApi();
+          Main.playlistApi(app_url);
       }
 
       break;
