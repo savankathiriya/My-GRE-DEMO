@@ -426,12 +426,7 @@ function rebootTv(){
                 setTimeout(function () {
                     setTimeout(function () {
                         if (typeof hcap !== 'undefined' && hcap.power && hcap.power.reboot) {
-                            hcap.power.reboot({
-                                onSuccess: function () { console.log("Rebbot success"); },
-                                onFailure: function (f) {
-                                    console.log("Reboot failed: " + f.errorMessage);
-                                }
-                            })
+                            CheckoutManager_requestCheckout();
                         } else {
                             Main.HideLoading();
                         }
@@ -441,12 +436,7 @@ function rebootTv(){
             onFailure: function(err) {
                 setTimeout(function () {
                     if (typeof hcap !== 'undefined' && hcap.power && hcap.power.reboot) {
-                        hcap.power.reboot({
-                            onSuccess: function () { console.log("Rebbot success"); },
-                            onFailure: function (f) {
-                                console.log("Reboot failed: " + f.errorMessage);
-                            }
-                        })
+                        CheckoutManager_requestCheckout();
                     } else {
                         Main.HideLoading();
                     }

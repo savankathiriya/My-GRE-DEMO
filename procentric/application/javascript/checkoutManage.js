@@ -17,12 +17,15 @@ function performLocalCheckout(complete) {
     hcap.checkout.requestCheckout({
         onSuccess: function () {
 
-            Main.HideLoading();
+            if(DisplayCheckOutScreen) {
+                Main.HideLoading();
 
-            macro("#mainContent").html("");
-            macro("#mainContent").html(Util.checkoutThankYouScreen());
-
-            destroyAppsThenReboot(complete);
+                macro("#mainContent").html("");
+                macro("#mainContent").html(Util.checkoutThankYouScreen());
+                destroyAppsThenReboot(complete);
+            } else {
+                destroyAppsThenReboot(complete);
+            }
         },
 
         onFailure: function (err) {
@@ -49,8 +52,8 @@ function destroyAppsThenReboot(complete) {
 
     /* App IDs vary by model */
     var apps = [
-        { id: "244115188075859013", name: "Netflix" },
-        { id: "144115188075859002", name: "YouTube" }
+        { id: Main.lgSettings.netflix_app_id, name: "Netflix" },
+        { id: Main.lgSettings.youtube_app_id, name: "YouTube" }
     ];
 
     var remaining = apps.length;

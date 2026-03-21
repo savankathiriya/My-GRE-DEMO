@@ -70,7 +70,7 @@ var ScreenSaver = (function () {
 
     function _readIdleSec() {
         try {
-            var t = Main.deviceProfile && Main.deviceProfile.screen_saver_start_time;
+            var t = Main.deviceProfile && Main.deviceProfile.property_detail.screen_saver_start_time;
             var n = parseInt(t, 10);
             return (!isNaN(n) && n > 0) ? n : 0;
         } catch (e) { return 0; }

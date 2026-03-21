@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.710"
+	appVersion:"v1.740"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -32,6 +32,7 @@ var warmSleepTimerId = null;
 var warmSleepStartTs = null;
 var isWarmMode = false;
 var WARM_SLEEP_RESET_MS = 24 * 60 * 60 * 1000;
+var DisplayCheckOutScreen = false;
 
 function _isValidIp(ip) {
   return typeof ip === "string" &&
@@ -858,27 +859,151 @@ function handleMqttCommand(cmd, data, topic) {
   console.log('[MQTT CMD] cmd:', cmd, '| topic:', topic, '| data:', JSON.stringify(data));
 
     switch(cmd) {
-      case "checkout" : return mqtt_reboot();
-      case "checkin" : return mqtt_reboot();
-      case "reboot" : return mqtt_reboot();
-      case "refresh" : return mqtt_reboot();
-      case "refresh_app_data" : return mqtt_reboot();
-      case "take_screenshot" : return mqtt_takeScreenshot(data);
+      case "checkout"             : return mqtt_reboot();
+      case "checkin"              : return mqtt_reboot();
+      case "reboot"               : return mqtt_reboot();
+      case "refresh"              : return mqtt_reboot();
+      case "refresh_app_data"     : return mqtt_reboot();
+      case "take_screenshot"      : return mqtt_takeScreenshot(data);
+      case "screen_saver_on"      : return mqtt_screenSaverOn();
+      case "screen_saver_off"     : return mqtt_screenSaverOff();
+      case "refresh_screensaver"  : return mqtt_refreshScreenSaverData();
     }
  
   function mqtt_reboot() {
-    try {
-      hcap.power.reboot({
-        onSuccess: function() {
-          console.log("TV reboot initiated via MQTT command");
-        },
-        onFailure: function(f) {
-          console.warn("Failed to reboot TV via MQTT command:", f && f.errorMessage);
-        }
-      })
-    } catch (e) {
-      console.error("Exception while rebooting TV via MQTT command:", e);
+    CheckoutManager_requestCheckout();
+  }
+
+  /**
+   * mqtt_screenSaverOn()
+   *
+   * Triggered by MQTT cmd "screen_saver_on".
+   * Conditions required before launching:
+   *   1. ScreenSaver module must be loaded.
+   *   2. Main.screenSaverData must be ready (fetched by Main.screenSaverInterval).
+   *   3. The screen saver must not already be active.
+   *   4. The current view must be macroHome or languagePage (safe to cover).
+   *
+   * If conditions are met the idle timer is cancelled and the screen saver
+   * launches immediately (bypassing the normal idle countdown).
+   * If Main.screenSaverData is not ready yet we wait up to 10 s, polling
+   * every 500 ms, so a command arriving just after boot still works.
+   */
+  function mqtt_screenSaverOn() {
+    console.log('[MQTT] screen_saver_on received');
+
+    if (typeof ScreenSaver === 'undefined') {
+      console.warn('[MQTT] ScreenSaver module not loaded — ignoring screen_saver_on');
+      return;
     }
+
+    if (ScreenSaver.isActive()) {
+      console.log('[MQTT] Screen saver already active — ignoring screen_saver_on');
+      return;
+    }
+
+    // Helper: attempt launch once data is confirmed ready
+    function _tryLaunch(attemptsLeft) {
+      var dataReady = Main.screenSaverData &&
+                      Main.screenSaverData.ready &&
+                      Array.isArray(Main.screenSaverData.entries) &&
+                      Main.screenSaverData.entries.length > 0;
+
+      if (!dataReady) {
+        if (attemptsLeft <= 0) {
+          console.warn('[MQTT] screen_saver_on: screenSaverData still not ready after retries — aborting');
+          return;
+        }
+        console.log('[MQTT] screen_saver_on: waiting for screenSaverData… attempts left:', attemptsLeft);
+        setTimeout(function () { _tryLaunch(attemptsLeft - 1); }, 500);
+        return;
+      }
+
+      // Only launch from safe views (home / language page)
+      var safeView = (view === 'macroHome' || view === 'languagePage');
+      if (!safeView) {
+        console.warn('[MQTT] screen_saver_on: current view "' + view + '" is not macroHome/languagePage — ignoring');
+        return;
+      }
+
+      // Cancel the normal idle countdown so it doesn't double-fire
+      try { ScreenSaver.clearIdleTimer(); } catch (e) {}
+
+      // Simulate idle-timer expiry: reset index and launch immediately
+      console.log('[MQTT] screen_saver_on: launching screen saver now');
+      try {
+        // Access private state indirectly by clearing the timer and
+        // directly calling armIdleTimer with a 0-second timeout isn't
+        // possible, so we trigger the same path the idle timer uses:
+        // set screen_saver_start_time to a very short value temporarily,
+        // then re-arm. But the cleanest approach is to just call the
+        // internal _launch via armIdleTimer at 1 ms.
+        //
+        // Since _launch is private, we leverage the fact that armIdleTimer
+        // reads screen_saver_start_time from deviceProfile.  We temporarily
+        // override it, arm, then restore — but that modifies shared state.
+        //
+        // Safest approach: patch the profile temporarily.
+        var propDetail = Main.deviceProfile && Main.deviceProfile.property_detail;
+        var originalTime = propDetail ? propDetail.screen_saver_start_time : undefined;
+
+        if (propDetail) { propDetail.screen_saver_start_time = 1; }
+
+        ScreenSaver.armIdleTimer();   // arms a 1-second timer → launches
+
+        // Restore original value after the timer fires (1 s + buffer)
+        setTimeout(function () {
+          if (propDetail && originalTime !== undefined) {
+            propDetail.screen_saver_start_time = originalTime;
+          }
+        }, 1500);
+
+      } catch (e) {
+        console.error('[MQTT] screen_saver_on launch error:', e);
+      }
+    }
+
+    // Retry up to 20 times (10 s total) in case data is still loading
+    _tryLaunch(20);
+  }
+
+  /**
+   * mqtt_screenSaverOff()
+   *
+   * Triggered by MQTT cmd "screen_saver_off".
+   * Stops the screen saver (if active) exactly as a remote-key press
+   * would: PlaylistPlayer is stopped silently, Main.previousPage() is
+   * called to restore the previous page, and the idle timer is re-armed
+   * so the saver can activate again after the next idle period.
+   *
+   * If the screen saver is not currently active this is a no-op.
+   */
+  function mqtt_screenSaverOff() {
+    console.log('[MQTT] screen_saver_off received');
+
+    if (typeof ScreenSaver === 'undefined') {
+      console.warn('[MQTT] ScreenSaver module not loaded — ignoring screen_saver_off');
+      return;
+    }
+
+    if (!ScreenSaver.isActive()) {
+      console.log('[MQTT] Screen saver not active — ignoring screen_saver_off');
+      return;
+    }
+
+    // Delegate to handleKeyPress which performs a clean stop + page restore
+    // + idle-timer re-arm, identical to what a physical remote key press does.
+    console.log('[MQTT] screen_saver_off: stopping screen saver via handleKeyPress()');
+    try {
+      ScreenSaver.handleKeyPress();
+    } catch (e) {
+      console.error('[MQTT] screen_saver_off error:', e);
+    }
+  }
+
+  function mqtt_refreshScreenSaverData() {
+    Main.screenSaverData = null;  // clear existing data to force refresh
+    Main.screenSaverInterval();
   }
 
   function mqtt_takeScreenshot(data) {

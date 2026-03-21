@@ -1138,12 +1138,14 @@ Navigation.popupKeyhandler = function (event) {
           // Clear & Checkout (modern or fallback auto-handled)
           macro("#popUpFDFS").html('');
           Main.popupData = {};
+          DisplayCheckOutScreen = true;
           CheckoutManager_requestCheckout();
         }
         else if (splitData[1] == 2) {
           // Clear only (legacy fallback always)
           macro("#popUpFDFS").html('');
           Main.popupData = {};
+          DisplayCheckOutScreen = true;
           CheckoutManager_requestCheckout();
         }
       }else {
