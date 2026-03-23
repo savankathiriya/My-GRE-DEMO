@@ -64,6 +64,19 @@ var ScreenSaver = (function () {
     function _log(msg)  { console.log('[ScreenSaver] '  + msg); }
     function _warn(msg) { console.warn('[ScreenSaver] ' + msg); }
 
+    /**
+     * Returns true only when is_screen_saver_service is explicitly true.
+     * Any other value (false, undefined, missing) disables the service.
+     */
+    function _isServiceEnabled() {
+        try {
+            var enabled = Main.deviceProfile &&
+                          Main.deviceProfile.property_detail &&
+                          Main.deviceProfile.property_detail.is_screen_saver_service;
+            return enabled === true;
+        } catch (e) { return false; }
+    }
+
     function _clearTimer() {
         if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     }
@@ -168,6 +181,13 @@ var ScreenSaver = (function () {
     function armIdleTimer() {
         if (_active) return;
 
+        // Respect the is_screen_saver_service flag from the device profile.
+        // If it is not explicitly true, do nothing.
+        if (!_isServiceEnabled()) {
+            _warn('armIdleTimer: is_screen_saver_service is not true — screen saver disabled');
+            return;
+        }
+
         var entries = _entries();
         if (!entries.length) {
             _warn('armIdleTimer: Main.screenSaverData not ready — timer not armed');
@@ -215,10 +235,11 @@ var ScreenSaver = (function () {
      *                  processTrigger() must return immediately when true.
      */
     function handleKeyPress() {
-        // Always reset idle timer on key press when on eligible view
+        // Always reset idle timer on key press when on eligible view,
+        // but only if the screen saver service is enabled.
         if (!_active && (view === 'macroHome' || view === 'languagePage')) {
             var entries = _entries();
-            if (entries.length) armIdleTimer();
+            if (entries.length && _isServiceEnabled()) armIdleTimer();
         }
 
         if (!_active) return false; // nothing to stop

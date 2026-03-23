@@ -619,14 +619,7 @@ Main.guestInfoAfterInterval = function () {
           (Array.isArray(tvCmd) && tvCmd.length > 0);
 
         if(hasCommand && window.hcap && hcap.power && hcap.power.reboot) {
-          hcap.power.reboot({
-            onSuccess: function () {
-              console.log("[GuestInfo Interval] Reboot command executed successfully.");
-            },
-            onFailure: function (f) {
-              console.warn("Reboot failed:", f && f.errorMessage);
-            }
-          })
+          CheckoutManager_requestCheckout();
         }
       },
       error: function (err) {
@@ -1123,6 +1116,20 @@ Main.deviceProfileApi = function (callback) {
 
         // Fetch screen-saver data once and arm the idle timer
         Main.screenSaverInterval();
+
+        // ── START SCHEDULED DAILY REBOOTS ─────────────────────────────
+        // Reboots automatically at 00:00 AM (midnight) and 12:00 PM (noon)
+        // every day. Timezone is read from property_detail.property_timezone.
+        try {
+          if (typeof ScheduledReboot !== 'undefined') {
+            ScheduledReboot.start();
+          } else {
+            console.warn('[ScheduledReboot] Module not loaded — skipping scheduler');
+          }
+        } catch (e) {
+          console.warn('[ScheduledReboot] Failed to start:', e);
+        }
+        // ──────────────────────────────────────────────────────────────
 
         // 🔥 SET RMS TRUSTED IP IMMEDIATELY AFTER GETTING DEVICE PROFILE
 				if(Main.deviceProfile && Main.deviceProfile.property_detail && Main.deviceProfile.property_detail.status_server_ip){

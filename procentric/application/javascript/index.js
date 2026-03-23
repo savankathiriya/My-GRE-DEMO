@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.740"
+	appVersion:"v1.770"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -897,6 +897,15 @@ function handleMqttCommand(cmd, data, topic) {
       return;
     }
 
+    // Respect is_screen_saver_service flag — if not explicitly true, ignore the command.
+    var isEnabled = Main.deviceProfile &&
+                    Main.deviceProfile.property_detail &&
+                    Main.deviceProfile.property_detail.is_screen_saver_service === true;
+    if (!isEnabled) {
+      console.warn('[MQTT] screen_saver_on: is_screen_saver_service is not true — ignoring');
+      return;
+    }
+
     if (ScreenSaver.isActive()) {
       console.log('[MQTT] Screen saver already active — ignoring screen_saver_on');
       return;
@@ -929,21 +938,10 @@ function handleMqttCommand(cmd, data, topic) {
       // Cancel the normal idle countdown so it doesn't double-fire
       try { ScreenSaver.clearIdleTimer(); } catch (e) {}
 
-      // Simulate idle-timer expiry: reset index and launch immediately
+      // Simulate idle-timer expiry by temporarily patching screen_saver_start_time
+      // to 1 second, arming the timer, then restoring the original value.
       console.log('[MQTT] screen_saver_on: launching screen saver now');
       try {
-        // Access private state indirectly by clearing the timer and
-        // directly calling armIdleTimer with a 0-second timeout isn't
-        // possible, so we trigger the same path the idle timer uses:
-        // set screen_saver_start_time to a very short value temporarily,
-        // then re-arm. But the cleanest approach is to just call the
-        // internal _launch via armIdleTimer at 1 ms.
-        //
-        // Since _launch is private, we leverage the fact that armIdleTimer
-        // reads screen_saver_start_time from deviceProfile.  We temporarily
-        // override it, arm, then restore — but that modifies shared state.
-        //
-        // Safest approach: patch the profile temporarily.
         var propDetail = Main.deviceProfile && Main.deviceProfile.property_detail;
         var originalTime = propDetail ? propDetail.screen_saver_start_time : undefined;
 
@@ -986,6 +984,15 @@ function handleMqttCommand(cmd, data, topic) {
       return;
     }
 
+    // If the service is disabled there is nothing to stop.
+    var isEnabled = Main.deviceProfile &&
+                    Main.deviceProfile.property_detail &&
+                    Main.deviceProfile.property_detail.is_screen_saver_service === true;
+    if (!isEnabled) {
+      console.warn('[MQTT] screen_saver_off: is_screen_saver_service is not true — ignoring');
+      return;
+    }
+
     if (!ScreenSaver.isActive()) {
       console.log('[MQTT] Screen saver not active — ignoring screen_saver_off');
       return;
@@ -1002,6 +1009,17 @@ function handleMqttCommand(cmd, data, topic) {
   }
 
   function mqtt_refreshScreenSaverData() {
+    console.log('[MQTT] refresh_screensaver received');
+
+    // Only refresh if the screen saver service is enabled.
+    var isEnabled = Main.deviceProfile &&
+                    Main.deviceProfile.property_detail &&
+                    Main.deviceProfile.property_detail.is_screen_saver_service === true;
+    if (!isEnabled) {
+      console.warn('[MQTT] refresh_screensaver: is_screen_saver_service is not true — ignoring');
+      return;
+    }
+
     Main.screenSaverData = null;  // clear existing data to force refresh
     Main.screenSaverInterval();
   }

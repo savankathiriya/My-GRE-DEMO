@@ -98,8 +98,13 @@ Navigation.languagePageNavigation = function (event) {
       termsText  = "By clicking, you agree to our Terms & Conditions and Privacy Policy.";
     }
 
-    macro(".top_texts_welcom").text(captionText);
-    macro(".language-guest-message").text(guestMessage);
+    macro(".top_texts_welcom").text(captionText || "");
+    // Only update guest message element if it exists
+    if (guestMessage) {
+        macro(".language-guest-message").text(guestMessage).show();
+    } else {
+        macro(".language-guest-message").text("").hide();
+    }
     macro(".select_lan").text(selectText);
     macro(".terms_cond").text(termsText);
 

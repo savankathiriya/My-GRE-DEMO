@@ -148,12 +148,17 @@ Util.languageSelection = function () {
 
   // Welcome / caption text — resolved from page_caption template
   var pageCaption = (Main.templateApiData && Main.templateApiData.page_caption) || {};
-  var captionText  = resolvePlaceholders(pageCaption.caption_text  || "Welcome Dear Guest");
+  var captionText  = resolvePlaceholders(pageCaption.caption_text  || "");
   var guestMessage = resolvePlaceholders(pageCaption.guest_message || "");
 
-  Text += '<h1 class="language-welcome top_texts_welcom">' + captionText + '</h1>';
+  if (captionText) {
+      Text += '<h1 class="language-welcome top_texts_welcom">' + captionText + '</h1>';
+  } else {
+      Text += '<h1 class="language-welcome top_texts_welcom"></h1>';
+  }
+
   if (guestMessage) {
-    Text += '<p class="language-guest-message">' + guestMessage + '</p>';
+      Text += '<p class="language-guest-message">' + guestMessage + '</p>';
   }
 
   Text += '<div class="line"></div>';

@@ -510,32 +510,55 @@ function getCustomAppUrl(data,lgAppId) {
 }
 
 function resolvePlaceholders(text) {
-    if (!text) return "";
+    if (!text) return null;
 
-    var guest   = (Main.guestInfoData)                      || {};
+    var guest   = (Main.guestInfoData)                              || {};
     var prop    = (Main.deviceProfile && Main.deviceProfile.property_detail) || {};
     var roomNum = (Main.deviceProfile && Main.deviceProfile.room_number)     || "";
 
     var map = {
-        "{{guestName}}":       guest.g_name      || "",
-        "{{checkInDate}}":     guest.g_checkin   || "",
-        "{{checkOutDate}}":    guest.g_checkout  || "",
-        "{{propertyName}}":    prop.name         || "",
-        "{{propertyCity}}":    prop.city         || "",
-        "{{propertyAddress}}": prop.address      || "",
-        "{{propertyState}}":   prop.state        || "",
-        "{{propertyCountry}}": prop.country      || "",
-        "{{roomNumber}}":      roomNum
+        "{{guestName}}":       guest.g_name      || null,
+        "{{checkInDate}}":     guest.g_checkin   || null,
+        "{{checkOutDate}}":    guest.g_checkout  || null,
+        "{{propertyName}}":    prop.name         || null,
+        "{{propertyCity}}":    prop.city         || null,
+        "{{propertyAddress}}": prop.address      || null,
+        "{{propertyState}}":   prop.state        || null,
+        "{{propertyCountry}}": prop.country      || null,
+        "{{roomNumber}}":      roomNum           || null
     };
 
+    // Find which tokens are present in the text
+    var tokenRegex = /\{\{[a-zA-Z]+\}\}/g;
+    var tokensInText = text.match(tokenRegex) || [];
+
+    // If text has no placeholders, return as-is
+    if (tokensInText.length === 0) return text.trim() || null;
+
+    // Check if ALL tokens in this text resolve to null
+    var allNull = tokensInText.every(function(token) {
+        return !map[token]; // null, undefined, or empty string
+    });
+
+    if (allNull) return null;
+
+    // Replace: tokens with a value → substitute; tokens with null → remove (with surrounding spaces cleaned up)
     var result = text;
     for (var token in map) {
-        if (map.hasOwnProperty(token)) {
-        // Replace all occurrences of the token
-        result = result.split(token).join(map[token]);
+        if (!map.hasOwnProperty(token)) continue;
+        var value = map[token];
+        if (value) {
+            result = result.split(token).join(value);
+        } else {
+            // Remove the token and clean up any double/leading/trailing spaces
+            result = result.split(token).join("");
         }
     }
-    return result;
+
+    // Clean up extra whitespace left by removed tokens
+    result = result.replace(/\s{2,}/g, " ").trim();
+
+    return result || null;
 }
 
 function normalizeId(value) {

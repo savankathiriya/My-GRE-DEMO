@@ -57,6 +57,10 @@
             "VersionNo": 0.1
         },
         {
+            "FileName": "javascript/schedulerReboot.js",
+            "VersionNo": 0.1
+        },
+        {
             "FileName": "javascript/canvas-renderers/canvas-base.js",
             "VersionNo": 0.1
         },
