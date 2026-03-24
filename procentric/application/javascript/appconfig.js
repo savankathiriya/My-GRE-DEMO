@@ -561,6 +561,13 @@ function resolvePlaceholders(text) {
     return result || null;
 }
 
+function getQrData(serial, mac) {
+  if (serial && mac) return serial + "/" + mac;
+  if (serial) return serial;
+  if (mac) return mac;
+  return null;
+}
+
 function normalizeId(value) {
   if (
     value === null ||

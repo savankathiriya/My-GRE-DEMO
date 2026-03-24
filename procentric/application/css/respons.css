@@ -34,7 +34,8 @@
 
   .device-code {
     font-size: 20px;
-    margin: 0 0 20px 140px;
+    margin: 0 auto;
+    margin-bottom: 20px;
     letter-spacing: 1.5px;
   }
 
@@ -334,7 +335,7 @@
   /* Header Section - Updated to match second screenshot */
   .home-header {
     padding: 10px 75px 0;
-    margin-top: 65px;
+    margin-top: 0px;
   }
 
   .logo-section {
@@ -410,7 +411,7 @@
   }
 
   .menu-upside-wrapper {
-    top: 63px;
+    top: 50px;
     height: 112px;
   }
 
@@ -469,7 +470,7 @@
    .devicesContainer {
     width: 100%;
     height: 100vh;
-    min-height: 567px;
+    min-height: 100vh;
     position: relative;
     box-sizing: border-box;
     /* font-family: "Aeonik", "Helvetica Neue", Arial, sans-serif;  */
@@ -493,8 +494,8 @@
   /* Centered boxed panel exactly like Figma */
   .devicesContainer .device-panel {
     width: 794px;
-    height: 210px;
-    margin: 200px auto 0; /* distance from top matches Figma approx */
+    /* height: 210px; */
+    /* margin: 200px auto 0;  */
     position: relative;
     z-index: 2;
     display: flex;
@@ -508,7 +509,7 @@
     font-weight: 700;
     font-size: 27px;         /* matches figma small title */
     color: #FFFFFF;
-    margin-bottom: 80px;     /* spacing between title and row */
+    margin-bottom: 30px;     /* spacing between title and row */
     letter-spacing: 0.4px;
     text-align: center;
   }
@@ -516,7 +517,7 @@
   /* The exact width/height of the horizontal row area */
   .devicesContainer .device-row {
     width: 100%;
-    height: 113px;           /* vertical visual area of cards */
+    /* height: 113px;          */
     display: flex;
     justify-content: center;
     align-items: center;

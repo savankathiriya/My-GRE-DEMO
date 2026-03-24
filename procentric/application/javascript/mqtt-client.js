@@ -31,9 +31,7 @@
 
     var TOPICS_TEMPLATES = {
         tv_device_command:       'GRE/{DeviceSrNo}/CMD',
-        tv_property_command:     'GRE/{PropertyCode}/CMD',
-        portal_device_command:   'GRE/{DeviceSrNo}/CMD_RES',
-        portal_property_command: 'GRE/{PropertyCode}/CMD_RES'
+        tv_property_command:     'GRE/{PropertyCode}/CMD'
     };
 
     // ── Internal state ─────────────────────────────────────────────────────────

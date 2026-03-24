@@ -80,7 +80,7 @@ Util.downloadingPage = function (progress) {
   return Text;
 };
 
-Util.activationHtml = function (deviceSerialNumber) {
+Util.activationHtml = function (qrData) {
   var Text = "";
   
   Text += '<div class="activation-container">';
@@ -99,7 +99,7 @@ Util.activationHtml = function (deviceSerialNumber) {
   Text += "</div>";
 
   // Device serial number
-  Text += '<p class="device-code">' + deviceSerialNumber + "</p>";
+  Text += '<div class="text-center"><p class="device-code">' + qrData + "</p></div>";
 
   // Refresh timer
   Text +=
@@ -277,10 +277,15 @@ Util.homePageHtml = function () {
   // Weather and Time Section
   Text += '<div class="time-weather-section">';
   Text += '  <div class="weather-info">';
-  Text +=
+  if(Main.weatherDetails.current.condition.icon){
+    Text +=
     '    <img src="' +
     Main.weatherDetails.current.condition.icon +
     '" alt="Weather" class="weather-icon">';
+  }else {
+    Text += '<img src="images/cloudy.png" alt="Weather" class="weather-icon">';
+  }
+  
   Text +=
     '    <span class="temperature">' +
     Main.weatherDetails.current.temp_c +
@@ -386,6 +391,15 @@ Util.DevicesSwitchPage = function () {
 
     // render discovered HDMI inputs (or placeholders)
     var rendered = 0;
+
+    var shortIp = (function() {
+      if(deviceIp){
+        var parts = (deviceIp || '').split('.');
+        return parts.length === 4 ? parts[2] + '.' + parts[3] : (deviceIp || '');
+      }else{
+        return ""
+      }
+    })();
     for(var i = 0; i < connectedInputs.length; i++){
       var input = connectedInputs[i];
       var label = input.name || ("HDMI " + (input.index + 1));
@@ -416,6 +430,8 @@ Util.DevicesSwitchPage = function () {
 
     Text += '    </div>'; // device-row
     Text += '  </div>';   // device-panel
+
+    Text += '<div class="device-info">' + deviceMac + ' / ' + deviceSerialNumber + ' / ' + shortIp + '</div>';
     Text += '</div>'; // devicesContainer
 
     try { macro("#mainContent").html(Text); macro("#mainContent").show(); } catch (e) { console.warn('render devices failed', e); }

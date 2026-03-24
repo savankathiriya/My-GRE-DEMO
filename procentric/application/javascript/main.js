@@ -436,10 +436,30 @@ Main.restoreFromCacheAndOpenApp = function () {
   }
 };
 
+function buildProvisionPayload(serial, mac) {
+    var payload = {};
+
+    if (mac && mac.trim() !== "") {
+      payload.mac_address = mac;
+    }
+
+    if (serial && serial.trim() !== "") {
+      payload.sr_no = serial;
+    }
+
+    return payload;
+  }
+
 Main.deviceRegistrationAPi = function () {
-  var data = JSON.stringify({
-    sr_no: deviceMac,
-  });
+
+  var payload = buildProvisionPayload(deviceSerialNumber, deviceMac);
+
+  if (Object.keys(payload).length === 0) {
+    console.error("No valid device identifier available");
+    return;
+  }
+
+  var data = JSON.stringify(payload);
 
   macro.ajax({
     url: apiPrefixUrl + "provision-auth",
@@ -496,12 +516,14 @@ Main.deviceRegistrationAPi = function () {
         //   return;
         // }
 
+        var qrData = getQrData(deviceSerialNumber, deviceMac);
+
         macro("#mainContent").html("");
-        macro("#mainContent").html(Util.activationHtml(deviceSerialNumber));
+        macro("#mainContent").html(Util.activationHtml(qrData));
 
         // Clear old QR code and generate new one
         macro("#qrImage").html("");
-        Main.generateQrCode("qrImage", deviceSerialNumber);
+        Main.generateQrCode("qrImage", qrData);
 
         // Start refresh countdown
         Main.startRefreshCountdown();
@@ -526,13 +548,15 @@ Main.deviceRegistrationAPi = function () {
         return;
       }
 
+      var qrData = getQrData(deviceSerialNumber, deviceMac);
+
       // No cache available — show activation screen and retry
       macro("#mainContent").html("");
-      macro("#mainContent").html(Util.activationHtml(deviceSerialNumber));
+      macro("#mainContent").html(Util.activationHtml(qrData));
 
       // Clear old QR code and generate new one
       macro("#qrImage").html("");
-      Main.generateQrCode("qrImage", deviceSerialNumber);
+      Main.generateQrCode("qrImage", qrData);
 
       // Start refresh countdown
       Main.startRefreshCountdown();
@@ -1117,6 +1141,24 @@ Main.deviceProfileApi = function (callback) {
         // Fetch screen-saver data once and arm the idle timer
         Main.screenSaverInterval();
 
+        var tvName = "Guest Room TV";
+        if (Main.deviceProfile && Main.deviceProfile.room_number) {
+          tvName = "Room " + Main.deviceProfile.room_number + " TV";
+        }
+
+        idcap.request("idcap://configuration/property/set", {
+          parameters: {
+            key: "tv_name",
+            value: tvName
+          },
+          onSuccess: function () {
+            console.log("[Google Cast] TV name set to '" + tvName + "' (reboot required to take effect)");
+          },
+          onFailure: function (err) {
+            console.error("[Google Cast] Failed to set TV name: " + err.errorMessage);
+          }
+        });
+
         // ── START SCHEDULED DAILY REBOOTS ─────────────────────────────
         // Reboots automatically at 00:00 AM (midnight) and 12:00 PM (noon)
         // every day. Timezone is read from property_detail.property_timezone.
@@ -1130,6 +1172,8 @@ Main.deviceProfileApi = function (callback) {
           console.warn('[ScheduledReboot] Failed to start:', e);
         }
         // ──────────────────────────────────────────────────────────────
+
+        console.log("Mian--------------------------------------------------------------------->", Main.deviceProfile.property_detail.status_server_ip)
 
         // 🔥 SET RMS TRUSTED IP IMMEDIATELY AFTER GETTING DEVICE PROFILE
 				if(Main.deviceProfile && Main.deviceProfile.property_detail && Main.deviceProfile.property_detail.status_server_ip){
@@ -1152,7 +1196,7 @@ Main.deviceProfileApi = function (callback) {
           setTimeout(function () {
             try {
               if(typeof MqttClient !== 'undefined' && MqttClient.init) {
-                MqttClient.init(Main.deviceProfile.property_detail.mqtt_setting, deviceMac);
+                MqttClient.init(Main.deviceProfile.property_detail.mqtt_setting, Main.deviceProfile.sr_no);
               }else {
                 console.warn('[MQTT] MqttClient module not loaded yet');
               }

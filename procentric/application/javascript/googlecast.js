@@ -299,14 +299,28 @@ Main.launchGoogleCastGuide = function () {
     tvName     = "Room " + Main.deviceProfile.room_number + " TV";
   }
 
+  // Determine soft_ap based on casting_mode:
+  // "gateway" → soft_ap: false  (gateway device handles TV isolation)
+  // anything else (e.g. "soft_ap" / not set) → soft_ap: true
+  var castingMode = Main.deviceProfile &&
+                    Main.deviceProfile.property_detail &&
+                    Main.deviceProfile.property_detail.casting_mode
+                      ? Main.deviceProfile.property_detail.casting_mode
+                      : "";
+
+  var softAp = (castingMode.toLowerCase() !== "gateway");
+
+  console.log("[Google Cast] casting_mode: '" + castingMode + "' → soft_ap: " + softAp);
+
   // Generate a random 10-digit SoftAP password each session
   var password = Math.floor(Math.random() * 9000000000 + 1000000000).toString();
 
   var params = {
-    soft_ap        : true,
+    soft_ap        : softAp,
     room_number    : roomNumber,
     tv_name        : tvName,
     support_message: "For assistance, please contact the front desk",
+    ssid           : tvName,
     password       : password,
     channel_number : 0,          // 0 = random channel 1-165
     signal_strength: 0,
@@ -418,63 +432,82 @@ Main.blockMdnsDiscovery = function (block, callback) {
  * Main entry point called from the UI (e.g. when guest taps "Cast" tile).
  *
  * Flow:
- *  1. Register SI token  (mandatory every reboot)
- *  2. Enable DIAL        (optional, non-blocking)
- *  3. Wait for token registration result
+ *  5. Set human-readable TV name  (FIRST — tv_name resets on room_number change)
+ *  3. Register SI token           (mandatory every reboot)
+ *  8. Enable DIAL                 (optional, non-blocking)
+ *  2b. Wait for token registration result
  *  4. Verify / install Google Cast apps
- *  5. Wait for service to reach Ready state
+ *  (wait) Service reaches Ready state
  *  6. Launch Guide application
  */
 Main.handleGoogleCast = function () {
   console.log("[Google Cast] ---- Starting Google Cast flow ----");
   Main.ShowLoading();
 
-  // Step 3: Register SI token — result comes via event listener (step 2b)
-  Main.registerGoogleCastToken();
+  // Step 5: Set human-readable TV name FIRST.
+  // tv_name is reset whenever room_number changes, so we set it every session
+  // before any other calls. Consistent with launchGoogleCastGuide naming.
+  var tvName = "Guest Room TV";
+  if (Main.deviceProfile && Main.deviceProfile.room_number) {
+    tvName = "Room " + Main.deviceProfile.room_number + " TV";
+  }
 
-  // Step 8: Enable DIAL — non-blocking, runs in parallel with token registration
-  Main.enableDialProtocol(function (dialSuccess) {
-    if (dialSuccess) {
-      console.log("[Google Cast] DIAL active — Netflix/YouTube casting supported");
+  console.log("[Google Cast] Step 5 — Setting TV name: " + tvName);
+
+  Main.setGoogleCastDeviceName(tvName, function (nameSet) {
+    if (nameSet) {
+      console.log("[Google Cast] TV name set successfully — proceeding");
     } else {
-      console.warn("[Google Cast] DIAL not enabled — Netflix/YouTube DIAL casting unavailable");
-    }
-  });
-
-  // Wait for token registration event to be processed
-  setTimeout(function () {
-
-    if (!GoogleCastState.tokenRegistered) {
-      console.error("[Google Cast] Token not registered — aborting");
-      Main.HideLoading();
-      utilities.genricPopup("Google Cast is not available on this device.", "info");
-      return;
+      console.warn("[Google Cast] TV name set failed — continuing anyway");
     }
 
-    // Step 4: Verify installation
-    Main.checkGoogleCastInstalled(function (allInstalled) {
+    // Step 3: Register SI token — result comes via event listener (step 2b)
+    Main.registerGoogleCastToken();
 
-      if (allInstalled) {
-        console.log("[Google Cast] All apps present — checking service state");
-        Main._waitForServiceReady();
+    // Step 8: Enable DIAL — non-blocking, runs in parallel with token registration
+    Main.enableDialProtocol(function (dialSuccess) {
+      if (dialSuccess) {
+        console.log("[Google Cast] DIAL active — Netflix/YouTube casting supported");
       } else {
-        console.log("[Google Cast] Apps missing — starting installation");
-        Main.installGoogleCast(function (success) {
-          Main.HideLoading();
-          if (success) {
-            console.log("[Google Cast] Installation complete — waiting for service");
-            setTimeout(function () { Main._waitForServiceReady(); }, 2000);
-          } else {
-            console.error("[Google Cast] Installation failed");
-            utilities.genricPopup(
-              "Google Cast installation failed. Please try again or contact support.", "info"
-            );
-          }
-        });
+        console.warn("[Google Cast] DIAL not enabled — Netflix/YouTube DIAL casting unavailable");
       }
     });
 
-  }, 1500); // Allow time for token registration callback
+    // Wait for token registration event to be processed
+    setTimeout(function () {
+
+      if (!GoogleCastState.tokenRegistered) {
+        console.error("[Google Cast] Token not registered — aborting");
+        Main.HideLoading();
+        utilities.genricPopup("Google Cast is not available on this device.", "info");
+        return;
+      }
+
+      // Step 4: Verify installation
+      Main.checkGoogleCastInstalled(function (allInstalled) {
+
+        if (allInstalled) {
+          console.log("[Google Cast] All apps present — checking service state");
+          Main._waitForServiceReady();
+        } else {
+          console.log("[Google Cast] Apps missing — starting installation");
+          Main.installGoogleCast(function (success) {
+            Main.HideLoading();
+            if (success) {
+              console.log("[Google Cast] Installation complete — waiting for service");
+              setTimeout(function () { Main._waitForServiceReady(); }, 2000);
+            } else {
+              console.error("[Google Cast] Installation failed");
+              utilities.genricPopup(
+                "Google Cast installation failed. Please try again or contact support.", "info"
+              );
+            }
+          });
+        }
+      });
+
+    }, 1500); // Allow time for token registration callback
+  });
 };
 
 /**
