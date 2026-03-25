@@ -859,19 +859,35 @@ function handleMqttCommand(cmd, data, topic) {
   console.log('[MQTT CMD] cmd:', cmd, '| topic:', topic, '| data:', JSON.stringify(data));
 
     switch(cmd) {
-      case "checkout"             : return mqtt_reboot();
-      case "checkin"              : return mqtt_reboot();
-      case "reboot"               : return mqtt_reboot();
-      case "refresh"              : return mqtt_reboot();
-      case "refresh_app_data"     : return mqtt_reboot();
+      case "checkout"             : return mqtt_reboot(data);
+      case "checkin"              : return mqtt_reboot(data);
+      case "reboot"               : return mqtt_reboot(data);
+      case "refresh"              : return mqtt_reboot(data);
+      case "refresh_app_data"     : return mqtt_reboot(data);
       case "take_screenshot"      : return mqtt_takeScreenshot(data);
       case "screen_saver_on"      : return mqtt_screenSaverOn();
       case "screen_saver_off"     : return mqtt_screenSaverOff();
       case "refresh_screensaver"  : return mqtt_refreshScreenSaverData();
+      case "get_status"           : return mqtt_sendStatusInfo(data);
     }
  
-  function mqtt_reboot() {
-    CheckoutManager_requestCheckout();
+  function mqtt_reboot(data) {
+
+    var payload = {
+      cmd: data.cmd,
+      response: {
+        cmd_status: true,
+        sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+      },
+      seq: data.seq
+    };
+
+    sendInfoToBackend(payload);
+
+    setTimeout(function () {
+      CheckoutManager_requestCheckout();
+    }, 1500);
+
   }
 
   /**
@@ -1038,18 +1054,33 @@ function handleMqttCommand(cmd, data, topic) {
         format: "PNG"
       },
       onSuccess: function (cbObject) {
+        // utilities.genricPopup("Screenshot captured", 'info');
+
+        console.log("Screenshot captured:", cbObject);
+
         var fileUri = cbObject.uri;
         if (!fileUri) {
+          // utilities.genricPopup("Screenshot URI is empty", 'info');
+
           console.error("Screenshot URI is empty");
           return;
         }
+        // utilities.genricPopup("Uploading screenshot to", 'info');
 
+        console.log("Uploading screenshot to S3:", data.put_presign_url);
+
+        // 2. Read file as Blob
         fetch(fileUri)
-          .then(response => response.blob())
+          .then(function (res) {
+            if (!res.ok) throw new Error("Failed to read screenshot file");
+            return res.blob();
+          })
           .then(function (blob) {
+
+            // 3. Upload to AWS S3 presigned PUT URL
             return fetch(data.put_presign_url, {
               method: "PUT",
-               headers: {
+              headers: {
                 "Content-Type": "image/png"
               },
               body: blob
@@ -1057,18 +1088,27 @@ function handleMqttCommand(cmd, data, topic) {
           })
           .then(function (uploadRes) {
             if (!uploadRes.ok) {
-              console.error("Failed to upload screenshot to presigned URL:", uploadRes.status);
+              throw new Error("S3 upload failed, status: " + uploadRes.status);
             }
+            // utilities.genricPopup("Screenshot uploaded success", 'info');
+
+            console.log("Screenshot uploaded successfully to S3");
+
+            // 4. Send MQTT confirmation back (CMD_RES)
             sendScreenshotAck(data, fileUri);
           })
           .catch(function (err) {
+            // utilities.genricPopup("Screenshot upload error:" + err, 'info');
+
             console.error("Screenshot upload error:", err);
-          })
+          });
       },
       onFailure: function (err) {
-        console.error("Screen capture failed:", err);
+        console.error("IDCAP screenshot failed:", err && err.errorMessage);
+        // utilities.genricPopup("IDCAP screenshot failed:" + err, 'info');
+
       }
-    })
+    });
   }
 
   function sendScreenshotAck(data, fileUri) {
@@ -1102,6 +1142,86 @@ function handleMqttCommand(cmd, data, topic) {
     })
   }
 
+  function mqtt_sendStatusInfo(data) {
+
+    if(typeof idcap === "undefined" || !idcap.request) {
+      var payload = {
+        cmd: data.cmd,
+        response: {
+          app_status: "Online",
+          cmd_status: true,
+          device_network_ip: deviceIp ? deviceIp : "",
+          sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+          mac_address: deviceMac ? deviceMac : "",
+          screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+        },
+        seq: data.seq
+      }
+
+      sendInfoToBackend(payload);
+      return;
+    }
+
+    idcap.request("idcap://network/configuration/get", {
+      parameters: {},
+      onSuccess: function (cbObject) {
+        var wired = cbObject && cbObject.wired ? cbObject.wired : {};
+        var wifi  = cbObject && cbObject.wifi  ? cbObject.wifi  : {};
+
+        var networkInfo = {
+          wired: {
+            mac: wired.mac || "",
+            state: wired.state || "",
+            ipAddress: wired.ipAddress || "",
+            onInternet: wired.onInternet || "",
+            plugged: (wired.plugged === true || wired.plugged === false) ? wired.plugged : ""
+          },
+          wifi: {
+            mac: wifi.mac || "",
+            state: wifi.state || "",
+            ipAddress: wifi.ipAddress || "",
+            onInternet: wifi.onInternet || "",
+            ssid: wifi.ssid || ""
+          }
+        };
+
+        var payload = {
+          cmd: data.cmd,
+          response: {
+            app_status: "Online",
+            cmd_status: true,
+            device_network_ip: deviceIp ? deviceIp : "",
+            sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+            mac_address: deviceMac ? deviceMac : "",
+            screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+            network_info: networkInfo
+          },
+          seq: data.seq
+        }
+
+        sendInfoToBackend(payload);
+      }
+    })
+  }
+
+  function sendInfoToBackend(payload) {
+    macro.ajax({
+      url: apiPrefixUrl + "device-mqtt-cmd",
+      type: "POST",
+      data: JSON.stringify(payload),
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        Authorization: "Bearer " + pageDetails.access_token,
+      },
+      success: function(res) {
+        console.log("Status info sent successfully:", res);
+      },
+      error: function(err) {
+        console.error("Failed to send status info:", err);
+      },
+      timeout: 60000
+    })
+  }
 }
 
 app.appPreLoad();
