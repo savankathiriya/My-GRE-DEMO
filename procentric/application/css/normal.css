@@ -910,6 +910,7 @@ img.imgLoader.searchLoad {
   display: flex;
   align-items: center;
   flex-direction: row;
+  justify-content: flex-end;
 }
 
 .greeting {

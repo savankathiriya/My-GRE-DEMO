@@ -164,6 +164,12 @@ function tryPmsThenCheckout(complete) {
    CHECKOUT ENTRY POINT
 ================================ */
 function CheckoutManager_requestCheckout(complete) {
+    // Cancel any pending scheduled reboots to prevent a double-reboot
+    // race condition if manual checkout happens near midnight or noon.
+    if (window.ScheduledReboot && typeof ScheduledReboot.stop === 'function') {
+        ScheduledReboot.stop();
+    }
+
     try {
         if (window.hcap && typeof hcap.init === "function") {
             hcap.init();

@@ -138,8 +138,9 @@ var ScheduledReboot = (function () {
     }
 
     /**
-     * Triggers the reboot via CheckoutManager_requestCheckout().
-     * Falls back to hcap.power.reboot directly if CheckoutManager throws.
+     * Performs the actual reboot via hcap.power.reboot directly.
+     * stop() is called first to cancel all pending timers before rebooting.
+     * Falls back to hcap.power.powerOff if reboot is not available.
      */
     function _doReboot(label) {
         console.log(
@@ -148,35 +149,68 @@ var ScheduledReboot = (function () {
             '| UTC:', new Date().toISOString()
         );
 
-        try {
-            CheckoutManager_requestCheckout();
-        } catch (e) {
-            console.error(_LOG_PREFIX, 'CheckoutManager_requestCheckout threw:', e);
+        // Stop all timers BEFORE rebooting so no other slot
+        // can fire while the reboot is in progress.
+        stop();
 
-            // Direct HCAP fallback
-            try {
-                if (window.hcap && hcap.power && typeof hcap.power.reboot === 'function') {
-                    hcap.power.reboot({
-                        onSuccess: function () {
-                            console.log(_LOG_PREFIX, 'hcap.power.reboot success (fallback)');
-                        },
-                        onFailure: function (f) {
-                            console.error(_LOG_PREFIX, 'hcap.power.reboot failed (fallback):',
-                                          f && f.errorMessage);
-                        }
-                    });
-                } else {
-                    console.error(_LOG_PREFIX, 'hcap.power.reboot not available');
-                }
-            } catch (ex) {
-                console.error(_LOG_PREFIX, 'Direct HCAP reboot also threw:', ex);
+        try {
+            if (window.hcap && hcap.power && typeof hcap.power.reboot === 'function') {
+                console.log(_LOG_PREFIX, 'Calling hcap.power.reboot...');
+                hcap.power.reboot({
+                    onSuccess: function () {
+                        console.log(_LOG_PREFIX, 'hcap.power.reboot success');
+                    },
+                    onFailure: function (f) {
+                        console.error(
+                            _LOG_PREFIX,
+                            'hcap.power.reboot failed:',
+                            f && f.errorMessage
+                        );
+                        // Fallback to powerOff if reboot fails
+                        _powerOffFallback();
+                    }
+                });
+            } else {
+                console.error(_LOG_PREFIX, 'hcap.power.reboot not available — trying powerOff');
+                _powerOffFallback();
             }
+        } catch (e) {
+            console.error(_LOG_PREFIX, 'hcap.power.reboot threw:', e);
+            _powerOffFallback();
+        }
+    }
+
+    /**
+     * Fallback if hcap.power.reboot is not available or fails.
+     */
+    function _powerOffFallback() {
+        try {
+            if (window.hcap && hcap.power && typeof hcap.power.powerOff === 'function') {
+                console.log(_LOG_PREFIX, 'Calling hcap.power.powerOff (fallback)...');
+                hcap.power.powerOff({
+                    onSuccess: function () {
+                        console.log(_LOG_PREFIX, 'hcap.power.powerOff success (fallback)');
+                    },
+                    onFailure: function (f) {
+                        console.error(
+                            _LOG_PREFIX,
+                            'hcap.power.powerOff also failed:',
+                            f && f.errorMessage
+                        );
+                    }
+                });
+            } else {
+                console.error(_LOG_PREFIX, 'hcap.power.powerOff not available either');
+            }
+        } catch (e) {
+            console.error(_LOG_PREFIX, 'hcap.power.powerOff threw:', e);
         }
     }
 
     /**
      * Arms a single reboot slot.
-     * After the timer fires it re-arms for the next 24-hour cycle.
+     * No re-arm after firing — the TV reboots, app restarts, and
+     * start() arms fresh timers on every boot automatically.
      */
     function _scheduleSlot(slot, tz) {
         var delayMs = _msUntilNext(slot.hour, slot.minute, tz);
@@ -196,15 +230,9 @@ var ScheduledReboot = (function () {
             // Remove this handle from the active list
             _timers = _timers.filter(function (t) { return t !== handle; });
 
-            // Trigger reboot immediately — no mode check
+            // Trigger direct reboot — stop() is called inside _doReboot
+            // before the reboot so all other pending timers are cancelled.
             _doReboot(slot.label);
-
-            // Re-arm for the next 24-hour cycle
-            if (_isRunning) {
-                setTimeout(function () {
-                    _scheduleSlot(slot, _getTimezone());
-                }, 5000); // 5s gap before re-arming
-            }
 
         }, delayMs);
 
@@ -245,7 +273,8 @@ var ScheduledReboot = (function () {
      * ScheduledReboot.stop()
      *
      * Cancels all pending reboot timers.
-     * Call this before a manual checkout to prevent a double-reboot.
+     * Called automatically before every reboot.
+     * Also call this before a manual checkout to prevent a double-reboot.
      */
     function stop() {
         console.log(_LOG_PREFIX, 'Stopping — cancelling ' + _timers.length + ' timer(s)');

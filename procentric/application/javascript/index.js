@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.760"
+	appVersion:"v1.820"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";

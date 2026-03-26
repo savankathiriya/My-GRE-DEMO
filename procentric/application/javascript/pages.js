@@ -257,13 +257,10 @@ Util.homePageHtml = function () {
 
   // Resolved greeting from page_caption.guest_name template
   var homeCaption    = (Main.templateApiData && Main.templateApiData.page_caption) || {};
-  var greetingTmpl   = homeCaption.guest_name || "Hi, Dear {{guestName}}";
-  var resolvedGreeting = resolvePlaceholders(greetingTmpl);
-  if(guestName) {
-    console.log("guestName------------------->", guestName)
+  var resolvedGreeting = resolvePlaceholders(homeCaption.guest_name || "");
+
+  if(resolvedGreeting) {
     Text += '    <span class="greeting">' + resolvedGreeting + "</span>";
-  }else {
-    Text += '    <span class="greeting">' +"Hi, Dear Guest"+ "</span>";
   }
   Text +=
     '    <div class="room-number">' + Main.deviceProfile.room_number + "</div>";

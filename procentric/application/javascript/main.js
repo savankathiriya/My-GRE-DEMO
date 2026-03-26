@@ -1634,8 +1634,8 @@ Main.castingNewApi = function () {
         //Qr code generate using backend actual cast screen url
         Main.generateQrCode("castingQr", result.result.casting_url);
 
-        // Main.deviceActivity("close","page","Home screen");
-        // Main.deviceActivity("open","page","Chromecast screen");
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","page","Chromecast screen");
 
         // Start Clock & date
         utilities.updatingTimeAndDate();

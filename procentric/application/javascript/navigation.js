@@ -422,8 +422,8 @@ Navigation.homePageNavigation = function (event) {
 
       if (id == "lang_change_icon") {
         var comingFromHomeLang = true;
-        // Main.deviceActivity("open","page","welcome screen");
-        // Main.deviceActivity("open","page","Home screen");
+        Main.deviceActivity("open","page","welcome screen");
+        Main.deviceActivity("open","page","Home screen");
         Main.getTemplateApiData(comingFromHomeLang);
 
       }
@@ -444,8 +444,8 @@ Navigation.homePageNavigation = function (event) {
             }
           }),
           onSuccess: function(response) {
-            // Main.deviceActivity("close","page","Home screen");
-            // Main.deviceActivity("open","app",source);
+            Main.deviceActivity("close","page","Home screen");
+            Main.deviceActivity("open","app",source);
             console.log("Netflix Opend successfully")
           },
           onFailure: function(err) {
@@ -458,8 +458,8 @@ Navigation.homePageNavigation = function (event) {
           id: Main.lgSettings.youtube_app_id,
           parameters: "{}",
           onSuccess: function(response) {
-            // Main.deviceActivity("close","page","Home screen");
-            // Main.deviceActivity("open","app",source);
+            Main.deviceActivity("close","page","Home screen");
+            Main.deviceActivity("open","app",source);
             console.log("YouTube launched successfully");
           },
           onFailure: function (f) {
@@ -472,8 +472,8 @@ Navigation.homePageNavigation = function (event) {
           id: Main.lgSettings.accuweather_app_id,
           parameters: "{}",
           onSuccess: function() {
-            // Main.deviceActivity("close","page","Home screen");
-            // Main.deviceActivity("open","app",source);
+            Main.deviceActivity("close","page","Home screen");
+            Main.deviceActivity("open","app",source);
             console.log("accuweather launched successfully")
           },
           onFailure: function (f) {
@@ -510,16 +510,16 @@ Navigation.homePageNavigation = function (event) {
         Main.popupData.popuptype = "clearData"
         macro("#popUpFDFS").html(Util.clearDataPage());
         macro("#popupBtn-0").addClass('popupFocus');
-        // Main.deviceActivity("close","page","Home screen");
-        // Main.deviceActivity("open","page",source);
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","page",source);
       }
       else if(appUrl === "Casting") {
         Main.handleGoogleCast();
       }
       else if (appUrl === "LGTV") {
         var comingfromWatchTvApp = true;
-        // Main.deviceActivity("close","page","Home screen");
-        // Main.deviceActivity("open","app",source);
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","app",source);
         console.log("LGTV app launched");
         Main.lgLgChannelIdApi(comingfromWatchTvApp)
       }
@@ -530,10 +530,14 @@ Navigation.homePageNavigation = function (event) {
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "OurHotel") {
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","page",source);
         Main.jsontemplateApi(app_url);
       }
       else if (appUrl === "Playlist") {
-          Main.playlistApi(app_url);
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","page",source);
+        Main.playlistApi(app_url);
       }
 
       break;
