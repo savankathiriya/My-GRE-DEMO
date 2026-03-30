@@ -183,6 +183,8 @@ Util.languageSelection = function () {
     var name = lang.name ? lang.name.toUpperCase() : "UNKNOWN";
     var uuid = lang.language_uuid || "";
 
+    console.log("iconUrl-------------------->", iconUrl)
+
     Text += '<button class="language-btn" uuid="' + uuid + '" id="lang_btn-' + i + '">';
     Text += '<img src="' + iconUrl + '" alt="Flag" class="flag-icon">';
     Text += '<span class="lang-text">' + name + "</span>";
@@ -223,7 +225,8 @@ Util.homePageHtml = function () {
   var bgImage = Main.getInitialHomeBackgroundUrl();
   var logoImage = Main.cachedPropertyLogo || "/images/logo.png";
   var languageShortCut = "";
-  var languageIcon = "";
+  var iconkey = "langIcon_" + (presentPagedetails.clickedLanguage);
+  var languageIcon = (Main.cachedLanguageIcons && Main.cachedLanguageIcons[iconkey]);
   var Text = "";
 
   for (var i = 0; i <= Main.templateApiData.language_detail.length; i++) {
@@ -232,7 +235,7 @@ Util.homePageHtml = function () {
       Main.templateApiData.language_detail[i].language_uuid
     ) {
       languageShortCut = Main.templateApiData.language_detail[i].short_code;
-      languageIcon = Main.templateApiData.language_detail[i].icon;
+      // languageIcon = Main.templateApiData.language_detail[i].icon;
       break;
     }
   }
@@ -258,6 +261,7 @@ Util.homePageHtml = function () {
   // Resolved greeting from page_caption.guest_name template
   var homeCaption    = (Main.templateApiData && Main.templateApiData.page_caption) || {};
   var resolvedGreeting = resolvePlaceholders(homeCaption.guest_name || "");
+  var cloudyImage = Main.localAssets['cloudy']
 
   if(resolvedGreeting) {
     Text += '    <span class="greeting">' + resolvedGreeting + "</span>";
@@ -276,11 +280,12 @@ Util.homePageHtml = function () {
   Text += '  <div class="weather-info">';
   if(Main.weatherDetails.current.condition.icon){
     Text +=
-    '    <img src="' +
+    '<img src="' +
     Main.weatherDetails.current.condition.icon +
-    '" alt="Weather" class="weather-icon">';
+    '" alt="Weather" class="weather-icon" ' +
+    'onerror="this.onerror=null;this.src=\'' + cloudyImage + '\';">';
   }else {
-    Text += '<img src="images/cloudy.png" alt="Weather" class="weather-icon">';
+    Text += '<img src="' + cloudyImage + '" alt="Weather" class="weather-icon">';
   }
   
   Text +=
@@ -373,13 +378,17 @@ Util.DevicesSwitchPage = function () {
 
   console.log("connectedInputs--------------------->", connectedInputs);
     connectedInputs = connectedInputs || [];
+    var bluetooth = Main.localAssets['bluetooth'];
+    var restart = Main.localAssets['restart'];
+    var hdmiPort = Main.localAssets['hdmi-port'];
+    var hdmiBg = Main.localAssets["hdmi_background"];
 
     //boxed panel width 1192 x 315 centered
     var Text = '';
     Text += '<div class="devicesContainer">';
 
     // background (full viewport) with dimmed bg image
-    Text += '  <div class="background-image"><img src="images/hdmi_background.png" alt="Background" /></div>';
+    Text += '  <div class="background-image"><img src="' + hdmiBg + '" alt="Background" /></div>';
 
     // center panel that is the boxed area (1192 x 315)
     Text += '  <div class="device-panel">';
@@ -404,7 +413,7 @@ Util.DevicesSwitchPage = function () {
       var indexAttr = isFallback ? i : input.index;
 
       Text += '      <div class="device-card menu-btn card-type-hdmi" id="device-btn-' + rendered + '" data-action="input" data-type="' + typeAttr + '" data-index="' + indexAttr + '">';
-      Text += '        <div class="device-icon"><img src="images/hdmi-port.png" alt="' + label + '" /></div>';
+      Text += '        <div class="device-icon"><img src="' + hdmiPort + '" alt="' + label + '" /></div>';
       Text += '        <div class="device-label">' + label + '</div>';
       Text += '      </div>';
       rendered++;
@@ -413,14 +422,14 @@ Util.DevicesSwitchPage = function () {
     // place Bluetooth then Restart so final row becomes exactly: [HDMI cards...] [Bluetooth] [Restart]
     var bluetoothIndex = rendered;
     Text += '      <div class="device-card menu-btn card-type-bluetooth" id="device-btn-' + bluetoothIndex + '" data-action="bluetooth">';
-    Text += '        <div class="device-icon"><img src="images/bluetooth.png" alt="Bluetooth" /></div>';
+    Text += '        <div class="device-icon"><img src="' + bluetooth + '" alt="Bluetooth" /></div>';
     Text += '        <div class="device-label">Bluetooth</div>';
     Text += '      </div>';
     rendered++;
 
     var restartIndex = rendered;
     Text += '      <div class="device-card menu-btn card-type-restart" id="device-btn-' + restartIndex + '" data-action="restart">';
-    Text += '        <div class="device-icon"><img src="images/restart.png" alt="Restart" /></div>';
+    Text += '        <div class="device-icon"><img src="' + restart + '" alt="Restart" /></div>';
     Text += '        <div class="device-label">Restart TV</div>';
     Text += '      </div>';
     rendered++;
@@ -447,10 +456,11 @@ Util.hdmiInputEmptyPage = function (){
 }
 
 Util.clearDataPage = function () {
+    var clearData = Main.localAssets['clearData'];
     var Text = '';
     Text += '<div class="popupDiv">'
     Text += '<div class="clearData">'
-    Text += '<img src="images/clearData.png" alt="Checkout Icon">'
+    Text += '<img src="' + clearData + '" alt="Checkout Icon">'
     Text += '<h2>CLEAR CREDENTIAL</h2>'
     Text += '<p class="celarUpText">Press OK to manually clear your personal credentials for All streaming applications. Your credentials will also be Automatically cleared upon checkout.</p>'
     Text += '<p class="celarDownText">Netflix, Redbull, YouTube</p>'
@@ -732,6 +742,8 @@ Util.errorCastingScreen = function () {
 
 Util.customHdmiDisconnectedPage = function () {
 
+  var hdmiError = Main.localAssets['hdmi_HdmiError'];
+
   console.log("customHdmiDisconnectedPage called----------------->")
 
   var Text = '';
@@ -739,7 +751,7 @@ Util.customHdmiDisconnectedPage = function () {
   Text += '<div class="customHdmiDisconnectedPage">';
 
   Text += '  <div class="topHdmiBar">';
-  Text += '     <img src="images/hdmi_HdmiError.png" alt="HDMI"/>';
+  Text += '     <img src="' + hdmiError + '" alt="HDMI"/>';
   Text += '  </div>';
 
   Text += '  <h1 class="titleText">To ensure proper TV services, please do not unplug the set-top box HDMI or MPI cable.</h1>';
@@ -809,20 +821,26 @@ Util.lgLgTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
 
   // Use the currently selected channel index, or default to first channel
 
-
     console.log("presentPagedetails.currentChannelId--------------------->", presentPagedetails.currentChannelId);
 
     var channel = channelData[0];
     if(normalizeId(presentPagedetails.currentChannelId)){
-      channel = channelData.find( function (ch) {
+      var _lgFound = channelData.find( function (ch) {
         return String(ch.channel_id) === String(normalizeId(presentPagedetails.currentChannelId));
-      })
+      });
+      if (_lgFound) channel = _lgFound;
     }
+
+  // Ultimate safety net — if channel is still undefined (empty channelData)
+  if (!channel) {
+    channel = { channel_id: '', ch_name: '', ch_icon_url: '' };
+  }
+
   // Filter programs for this channel
-  var channelEpgId = String(channel.channel_id);
-  var channelPrograms = metaData.filter(function (m) {
+  var channelEpgId = channel.channel_id ? String(channel.channel_id) : '';
+  var channelPrograms = channelEpgId ? metaData.filter(function (m) {
       return String(m.channel_id) === channelEpgId;
-  });
+  }) : [];
 
   // Sort programs by start time
   channelPrograms.sort(function (a, b) {
@@ -842,16 +860,18 @@ Util.lgLgTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
                hour: '2-digit', minute: '2-digit', second: '2-digit' };
   var formattedNow = now.toLocaleString([], opts).replace(',', '');
 
-  var upArrow = "images/angle_up.png";
-  var downArrow = "images/angle_down.png";
+  var upArrow = Main.localAssets['angle_up'];
+  var downArrow = Main.localAssets['angle_down'];
+  var _lgArrowUpFallback   = "this.onerror=null;this.style.display='none';var s=document.createElement('span');s.innerHTML='&#9650;';s.style.cssText='color:#fff;font-size:18px;display:block;text-align:center;';this.parentNode.insertBefore(s,this);";
+  var _lgArrowDownFallback = "this.onerror=null;this.style.display='none';var s=document.createElement('span');s.innerHTML='&#9660;';s.style.cssText='color:#fff;font-size:18px;display:block;text-align:center;';this.parentNode.insertBefore(s,this);";
 
   Text += '<div class="lg-tv-overlay">';
   Text += '<div class="lg-tv-left">';
-  Text += '<img src="' + upArrow + '" class="lg-tv-arrow" alt="Up">';
+  Text += '<img src="' + upArrow + '" class="lg-tv-arrow" alt="Up" onerror="' + _lgArrowUpFallback + '">';
   Text += '<div class="lg-tv-logo-container">';
-  Text += '<img src="' + (channel.ch_icon_url || '') + '" class="lg-tv-logo" alt="Channel Logo">';
+  Text += '<img src="' + (channel.ch_icon_url || '') + '" class="lg-tv-logo" alt="Channel Logo" onerror="this.onerror=null;this.style.opacity=\'0\';">';
   Text += '</div>';
-  Text += '<img src="' + downArrow + '" class="lg-tv-arrow" alt="Down">';
+  Text += '<img src="' + downArrow + '" class="lg-tv-arrow" alt="Down" onerror="' + _lgArrowDownFallback + '">';
   Text += '</div>';
   Text += '<div class="lg-tv-right">';
   Text += '<div class="lg-tv-top">';
@@ -1240,23 +1260,31 @@ Util.liveTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
   console.log("presentPagedetails.currentLiveChannelId--------------------->", presentPagedetails.currentLiveChannelId);
   if( normalizeId(presentPagedetails.currentLiveChannelId)) {
     console.log("called----------->")
-    channel = channelData.find( function (ch) {
+    var _found = channelData.find( function (ch) {
       return String(ch.epg_id) === String(normalizeId(presentPagedetails.currentLiveChannelId));
-    })
-  }else if(normalizeId(presentPagedetails.currentLiveChannelUuid)) {
-    channel = channelData.find( function (ch) {
+    });
+    if (_found) channel = _found;
+  } else if(normalizeId(presentPagedetails.currentLiveChannelUuid)) {
+    var _found2 = channelData.find( function (ch) {
       return String(ch.channel_uuid) === String(normalizeId(presentPagedetails.currentLiveChannelUuid));
-    })
+    });
+    if (_found2) channel = _found2;
+  }
+
+  // Ultimate safety net — if channel is still undefined (empty channelData array)
+  // render an empty-safe placeholder so the overlay always shows.
+  if (!channel) {
+    channel = { epg_id: '', channel_uuid: '', icon: '', name: '', title: '' };
   }
 
   console.log("Selected channel for overlay--------------------->", channel);
-  var defaultIcon = setDefaultIconForChannels(Main.homePageData, "LIVETV")
+  var defaultIconSrc = Main.localAssets['ChannelDefaultIcon'];
 
   // Filter programs for this channel
-  var channelEpgId = String(channel.epg_id);
-  var channelPrograms = metaData.filter(function (m) {
+  var channelEpgId = channel.epg_id ? String(channel.epg_id) : '';
+  var channelPrograms = channelEpgId ? metaData.filter(function (m) {
     return String(m.channel_epg_id) === channelEpgId;
-  });
+  }) : [];
 
   // Sort programs by start time
   channelPrograms.sort(function (a, b) {
@@ -1276,16 +1304,20 @@ Util.liveTvGuideCurrentPlayingOverlay = function (channelData, metaData) {
   console.log("current program for overlay--------------------->", current);
   console.log("upcoming program for overlay--------------------->", upcoming);
 
-  var upArrow = "images/angle_up.png";
-  var downArrow = "images/angle_down.png";
+  var upArrow = Main.localAssets['angle_up'];
+  var downArrow = Main.localAssets['angle_down'];
+  // Inline SVG fallbacks rendered via onerror so arrows always show even if
+  // the PNG files are missing or fail to load when offline.
+  var arrowUpFallback   = "this.onerror=null;this.style.display='none';var s=document.createElement('span');s.innerHTML='&#9650;';s.style.cssText='color:#fff;font-size:18px;display:block;text-align:center;';this.parentNode.insertBefore(s,this);";
+  var arrowDownFallback = "this.onerror=null;this.style.display='none';var s=document.createElement('span');s.innerHTML='&#9660;';s.style.cssText='color:#fff;font-size:18px;display:block;text-align:center;';this.parentNode.insertBefore(s,this);";
 
   Text += '<div class="live-tv-overlay">';
   Text += '<div class="live-tv-left">';
-  Text += '<img src="' + upArrow + '" class="live-tv-arrow" alt="Up">';
+  Text += '<img src="' + upArrow + '" class="live-tv-arrow" alt="Up" onerror="' + arrowUpFallback + '">';
   Text += '<div class="lg-tv-logo-container">';
-  Text += '<img src="' + (channel.icon || '') + '" class="live-tv-logo" onerror="this.src = macro(this).attr(\'altSrc\')" altSrc="'+ defaultIcon.icon + '">';
+  Text += '<img src="' + Main.getLiveTvChannelIconUrl(channel) + '" class="live-tv-logo" onerror="this.onerror=null;this.src=\'' + defaultIconSrc + '\'">';
   Text += '</div>';
-  Text += '<img src="' + downArrow + '" class="live-tv-arrow" alt="Down">';
+  Text += '<img src="' + downArrow + '" class="live-tv-arrow" alt="Down" onerror="' + arrowDownFallback + '">';
   Text += '</div>';
   Text += '<div class="live-tv-right">';
   Text += '<div class="live-tv-top">';
@@ -1378,8 +1410,9 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
   }
 
   var lastChannelIndex = presentPagedetails.lastLiveChannelIndex || 0;
-  var defaultIcon = setDefaultIconForChannels(Main.homePageData, "LIVETV")
-  console.log("defaultIcon---------------------->", defaultIcon)
+
+  var undoImage = Main.localAssets['undo']
+  var _defaultIconSrc  = Main.localAssets['ChannelDefaultIcon'];
 
   Text += '<div class="live-tv-guide-container">';
   
@@ -1387,7 +1420,7 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
   Text += '<div class="live-tv-guide-header">';
   Text += '<div class="live-tv-guide-time">Current time: <span id="liveGuideCurrentTime"></span></div>';
   Text += '<div class="live-tv-guide-title">Macrotech Guestxp TV Guide</div>';
-  Text += '<div class="live-tv-guide-close">Press Back to close <img src="images/undo.png" alt="Back" class="back-icon" /></div>';
+  Text += '<div class="live-tv-guide-close">Press Back to close <img src="' + undoImage + '" alt="Back" class="back-icon" /></div>';
   Text += '</div>';
 
   // Column headers
@@ -1433,7 +1466,7 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
       var shortTitle = (ch.title || ch.name || '').length > 16 ? (ch.title || ch.name || '').substring(0, 16) + '...' : (ch.title || ch.name || '');
       
       Text += '<div class="live-tv-guide-channel-row' + focusClass + '" id="live-tv-channel-row-' + j + '" channel_uuid="' + ch.channel_uuid + '" data-channel-uuid="' + ch.epg_id + '" data-channel-index="' + j + '">';
-      Text += '<div class="live-tv-guide-channel-cell"><div class="live-channel-logo-box"><img src="' + ch.icon + '" onerror="this.src = macro(this).attr(\'altSrc\')" altSrc="'+ defaultIcon.icon + '" class="live-channel-logo-img"></div><div class="live-channel-name-text">' + shortTitle + '</div></div>';
+      Text += '<div class="live-tv-guide-channel-cell"><div class="live-channel-logo-box"><img src="' + Main.getLiveTvChannelIconUrl(ch) + '" onerror="this.onerror=null;this.src=\'' + _defaultIconSrc + '\';" class="live-channel-logo-img"></div><div class="live-channel-name-text">' + shortTitle + '</div></div>';
       
       if(Now){
         Text += '<div class="live-tv-guide-now-cell"><div class="live-now-show-title">' + cut(Now.program_title || Now.broadcast_title || '') + '</div><div class="live-now-time-badge">' + minutesLeft(Now.end_time) + '</div><div class="live-now-progress-bar"><div class="live-now-progress-fill" style="width: ' + progressline(Now.end_time) + '%"></div></div></div>';

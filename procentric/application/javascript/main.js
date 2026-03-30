@@ -493,6 +493,10 @@ Main.deviceRegistrationAPi = function () {
 
           Main.lgSetting();
 
+          // Pre-fetch ALL channel data in background so it is ready
+          // before the user navigates to LGTV or LIVETV.
+          Main.prefetchAllChannelData();
+
 					if(Main.db) {
 						try { Main.db.close(); } catch(ex) {console.log("Error closing IndexedDB:", ex)}
 						Main.db = null;
@@ -651,6 +655,138 @@ Main.guestInfoAfterInterval = function () {
       },
       timeout: 60000,
     });
+  }, interval * 1000);
+};
+
+/**
+ * Main.startStatusHeartbeat()
+ *
+ * Runs independently of the guest-info interval.
+ * Fires every `registration_refresh_interval` seconds (same value used by
+ * guestInfoAfterInterval) and posts a device status payload to the backend
+ * via sendInfoToBackend() — regardless of whether guest-info succeeds or fails.
+ *
+ * Payload mirrors mqtt_sendStatusInfo (cmd: "get_status", seq: 9999).
+ * network_info is included when idcap is available, omitted otherwise.
+ *
+ * Called once from Main.deviceProfileApi() alongside guestInfoAfterInterval().
+ */
+Main.startStatusHeartbeat = function () {
+  var interval =
+    Main.deviceProfile &&
+    Main.deviceProfile.property_detail &&
+    Main.deviceProfile.property_detail.registration_refresh_interval
+      ? Main.deviceProfile.property_detail.registration_refresh_interval
+      : null;
+
+  if (!interval) {
+    console.warn("[StatusHeartbeat] registration_refresh_interval not found in deviceProfile. Skipping heartbeat.");
+    return;
+  }
+
+  console.log("[StatusHeartbeat] Starting status heartbeat every " + interval + "s");
+
+  function _sendStatusPayload() {
+    if (typeof idcap === "undefined" || !idcap.request) {
+      var payload = {
+        cmd: "get_status",
+        response: {
+          app_status: "Online",
+          cmd_status: true,
+          device_network_ip: deviceIp ? deviceIp : "",
+          sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+          mac_address: deviceMac ? deviceMac : "",
+          screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+        },
+        seq: 9999
+      };
+      sendInfoToBackend(payload);
+      return;
+    }
+
+    idcap.request("idcap://network/configuration/get", {
+      parameters: {},
+      onSuccess: function (cbObject) {
+        var wired = cbObject && cbObject.wired ? cbObject.wired : {};
+        var wifi  = cbObject && cbObject.wifi  ? cbObject.wifi  : {};
+
+        var networkInfo = {
+          wired: {
+            mac: wired.mac || "",
+            state: wired.state || "",
+            ipAddress: wired.ipAddress || "",
+            onInternet: wired.onInternet || "",
+            plugged: (wired.plugged === true || wired.plugged === false) ? wired.plugged : ""
+          },
+          wifi: {
+            mac: wifi.mac || "",
+            state: wifi.state || "",
+            ipAddress: wifi.ipAddress || "",
+            onInternet: wifi.onInternet || "",
+            ssid: wifi.ssid || ""
+          }
+        };
+
+        var payload = {
+          cmd: "get_status",
+          response: {
+            app_status: "Online",
+            cmd_status: true,
+            device_network_ip: deviceIp ? deviceIp : "",
+            sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+            mac_address: deviceMac ? deviceMac : "",
+            screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+            network_info: networkInfo
+          },
+          seq: 9999
+        };
+
+        sendInfoToBackend(payload);
+      },
+      onFailure: function (err) {
+        console.warn("[StatusHeartbeat] idcap network/configuration/get failed:", err && err.errorMessage);
+        var fallbackPayload = {
+          cmd: "get_status",
+          response: {
+            app_status: "Online",
+            cmd_status: true,
+            device_network_ip: deviceIp ? deviceIp : "",
+            sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+            mac_address: deviceMac ? deviceMac : "",
+            screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+          },
+          seq: 9999
+        };
+        sendInfoToBackend(fallbackPayload);
+      }
+    });
+  }
+
+  function sendInfoToBackend(payload) {
+    macro.ajax({
+      url: apiPrefixUrl + "device-mqtt-cmd",
+      type: "POST",
+      data: JSON.stringify(payload),
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        Authorization: "Bearer " + pageDetails.access_token,
+      },
+      success: function(res) {
+        console.log("Status info sent successfully:", res);
+      },
+      error: function(err) {
+        console.error("Failed to send status info:", err);
+      },
+      timeout: 60000
+    })
+  }
+
+  setInterval(function () {
+    try {
+      _sendStatusPayload();
+    } catch (e) {
+      console.warn("[StatusHeartbeat] _sendStatusPayload error:", e);
+    }
   }, interval * 1000);
 };
 
@@ -958,9 +1094,56 @@ Main.getTemplateApiData = function (comingFromHomeLang) {
 						Main.loadCachedImagesThenRender();
 					}
 
-					// Main.cacheAllHomeBackgrounds(function (arr) {
-					// 	console.log("Home backgrounds cached:", arr.length);
-					// });
+					// ── Re-cache home app images (bg + icon) into the fresh IDB ──────────
+					// The DB was deleted and recreated above. getHomeData() had already
+					// fetched and cached these images but into the OLD db which was wiped.
+					// We must re-cache them now so they are available for offline playback.
+					// This runs in the background and does NOT block page rendering.
+					try {
+						if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
+							// Group by language uuid (same logic as getHomeData)
+							var byLang = {};
+							Main.homePageData.forEach(function (app) {
+								if (!app || app.is_active !== true) return;
+								var lid = app.language_uuid || 'unknown';
+								(byLang[lid] = byLang[lid] || []).push(app);
+							});
+
+							Object.keys(byLang).forEach(function (langId) {
+								try {
+									Main.cacheHomeImageAssetsByLanguage(
+										byLang[langId],
+										langId,
+										function (cachedGroup) {
+											Main.cachedHomeByLang = Main.cachedHomeByLang || {};
+											Main.cachedHomeByLang[langId] = cachedGroup;
+											console.log('[HomeImageCache] Re-cached home images for lang:', langId, '— count:', (cachedGroup || []).length);
+										},
+										false /* idbOnly=false: fetch from network + store in fresh DB */
+									);
+								} catch (ex) {
+									console.warn('[HomeImageCache] Re-cache error for lang:', langId, ex);
+								}
+							});
+						} else {
+							console.warn('[HomeImageCache] homePageData not available yet — skipping re-cache');
+						}
+					} catch (ex) {
+						console.warn('[HomeImageCache] Unexpected error during re-cache:', ex);
+					}
+					// ─────────────────────────────────────────────────────────────────────
+
+					// ── Cache all static /images/*.png files into IDB ─────────────────────
+					// Runs in background, does NOT block rendering.
+					// After this, use Main.getLocalAsset('wifi', fn) anywhere in the app.
+					try {
+						Main.cacheLocalAssets(function () {
+							console.log('[LocalAssets] Static image caching complete');
+						});
+					} catch (ex) {
+						console.warn('[LocalAssets] cacheLocalAssets error:', ex);
+					}
+					// ─────────────────────────────────────────────────────────────────────
 				});
 			}
 		},
@@ -1138,6 +1321,9 @@ Main.deviceProfileApi = function (callback) {
         // Start polling guest-info at registration_refresh_interval
         Main.guestInfoAfterInterval();
 
+        // Start independent device status heartbeat (same interval, fully decoupled from guest-info)
+        Main.startStatusHeartbeat();
+
         // Fetch screen-saver data once and arm the idle timer
         Main.screenSaverInterval();
 
@@ -1290,6 +1476,12 @@ Main.cacheHomeImageAssetsByLanguage = function (items, langUuid, done, idbOnly) 
               var xhr = new XMLHttpRequest();
               xhr.open("GET", url, true);
               xhr.responseType = "blob";
+              // ── CRITICAL: set a timeout so the XHR never hangs when
+              //    the network drops mid-session. Without this, LG TV
+              //    XHRs neither fire onload nor onerror when offline,
+              //    causing cb() to never be called and the home page to
+              //    never render.
+              xhr.timeout = 8000; // 8 seconds max per image fetch
               xhr.onload = function () {
                 if (xhr.status === 200) {
                   try {
@@ -1303,7 +1495,13 @@ Main.cacheHomeImageAssetsByLanguage = function (items, langUuid, done, idbOnly) 
                   cb(null);
                 }
               };
-              xhr.onerror = function () { cb(null); }; // ← was typo "ccb" — fixed
+              xhr.onerror   = function () { cb(null); };
+              xhr.ontimeout = function () {
+                // Network unavailable — proceed without cached image;
+                // the raw API URL will be used as a graceful fallback.
+                console.warn('[cacheHomeImages] XHR timeout (offline?), skipping image:', key);
+                cb(null);
+              };
               xhr.send();
             } catch (xhrEx) {
               console.warn('[cacheHomeImages] XHR setup error:', xhrEx);
@@ -1819,6 +2017,214 @@ Main.updateDeviceDetailsSendApi = function () {
 }
 
 /*=====================================================
+LIVE TV CHANNEL ICON CACHING TO INDEXEDDB
+===================================================== */
+
+/**
+ * Main.cacheLiveTvChannelIcons(channels, callback)
+ *
+ * Fetches and stores each Live TV channel icon blob into IndexedDB
+ * using key "liveTvChIcon_<channel_uuid>".
+ * Blob URLs stored in Main.cachedLiveTvChannelIcons[key].
+ * Falls back gracefully (raw URL) when offline or IDB unavailable.
+ */
+Main.cacheLiveTvChannelIcons = function (channels, callback) {
+  if (!channels || !channels.length) {
+    if (typeof callback === 'function') callback();
+    return;
+  }
+
+  Main.cachedLiveTvChannelIcons = Main.cachedLiveTvChannelIcons || {};
+
+  var total     = channels.length;
+  var doneCount = 0;
+
+  function checkDone() {
+    doneCount++;
+    if (doneCount >= total && typeof callback === 'function') callback();
+  }
+
+  function fetchAndStore(url, idbKey, done) {
+    try {
+      var xhr          = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'blob';
+      xhr.timeout      = 8000;
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          try {
+            var txw    = Main.db.transaction(['images'], 'readwrite');
+            var storew = txw.objectStore('images');
+            storew.put(xhr.response, idbKey);
+            txw.oncomplete = function () {
+              try { Main.cachedLiveTvChannelIcons[idbKey] = URL.createObjectURL(xhr.response); }
+              catch (ex) { Main.cachedLiveTvChannelIcons[idbKey] = url; }
+              done();
+            };
+            txw.onerror = function () { Main.cachedLiveTvChannelIcons[idbKey] = url; done(); };
+          } catch (ex) { Main.cachedLiveTvChannelIcons[idbKey] = url; done(); }
+        } else { Main.cachedLiveTvChannelIcons[idbKey] = url; done(); }
+      };
+      xhr.onerror   = function () { Main.cachedLiveTvChannelIcons[idbKey] = url; done(); };
+      xhr.ontimeout = function () {
+        console.warn('[LiveTvIcons] XHR timeout:', idbKey);
+        Main.cachedLiveTvChannelIcons[idbKey] = url; done();
+      };
+      xhr.send();
+    } catch (ex) {
+      console.warn('[LiveTvIcons] XHR error:', idbKey, ex);
+      Main.cachedLiveTvChannelIcons[idbKey] = url; done();
+    }
+  }
+
+  function cacheOneIcon(ch) {
+    var iconUrl = ch && ch.icon;
+    var uuid    = ch && (ch.channel_uuid || ch.epg_id || String(ch.channel_id || ''));
+    var idbKey  = 'liveTvChIcon_' + uuid;
+
+    if (!iconUrl || !uuid) { return checkDone(); }
+    if (Main.cachedLiveTvChannelIcons[idbKey]) { return checkDone(); }
+
+    if (!Main.db) {
+      Main.dbInit(function () { cacheOneIcon(ch); });
+      return;
+    }
+
+    try {
+      var tx     = Main.db.transaction(['images'], 'readonly');
+      var store  = tx.objectStore('images');
+      var getReq = store.get(idbKey);
+
+      getReq.onsuccess = function (event) {
+        var blob = event.target.result;
+        if (blob) {
+          try { Main.cachedLiveTvChannelIcons[idbKey] = URL.createObjectURL(blob); }
+          catch (ex) { Main.cachedLiveTvChannelIcons[idbKey] = iconUrl; }
+          console.log('[LiveTvIcons] Loaded from IDB:', idbKey);
+          return checkDone();
+        }
+        fetchAndStore(iconUrl, idbKey, checkDone);
+      };
+      getReq.onerror = function () { fetchAndStore(iconUrl, idbKey, checkDone); };
+    } catch (ex) {
+      console.warn('[LiveTvIcons] IDB read error:', idbKey, ex);
+      fetchAndStore(iconUrl, idbKey, checkDone);
+    }
+  }
+
+  for (var i = 0; i < channels.length; i++) {
+    cacheOneIcon(channels[i]);
+  }
+};
+
+/**
+ * Main.getLiveTvChannelIconUrl(ch)
+ * Returns cached blob URL for the channel icon, or raw URL fallback.
+ */
+Main.getLiveTvChannelIconUrl = function (ch) {
+  if (!ch) return '';
+  var uuid   = ch.channel_uuid || ch.epg_id || String(ch.channel_id || '');
+  var idbKey = 'liveTvChIcon_' + uuid;
+  var cached = Main.cachedLiveTvChannelIcons && Main.cachedLiveTvChannelIcons[idbKey];
+  return cached || ch.icon || '';
+};
+
+/*=====================================================
+PRE-FETCH ALL CHANNEL DATA AT STARTUP
+===================================================== */
+
+/**
+ * Main.prefetchAllChannelData()
+ *
+ * Called once from deviceRegistrationAPi after deviceProfileApi completes.
+ * Fetches Live TV channel APIs in the background and caches the results
+ * in runtime variables AND localStorage so navigation clicks are instant.
+ *
+ * Live TV : channel + channel-feed (NO language_uuid in URL)
+ *
+ * When the user later clicks LIVETV, the data is already ready.
+ * Language-based filtering is applied at render time using Main.clickedLanguage.
+ */
+Main.prefetchAllChannelData = function () {
+  console.log('[Prefetch] Starting background Live TV channel data prefetch…');
+
+  // ── Live TV Channels (NO language_uuid in URLs) ──────────────────────
+  macro.ajax({
+    url: apiPrefixUrl + "channel",
+    type: "GET",
+    headers: { Authorization: "Bearer " + pageDetails.access_token },
+    success: function (response) {
+      var result = typeof response === "string" ? JSON.parse(response) : response;
+      if (result && result.status === true && result.result && result.result.length > 0) {
+        Main.liveTvChannelIdDetails = result.result;
+        try { localStorage.setItem('liveTvChannelIdDetails', JSON.stringify(result.result)); } catch(e) {}
+        console.log('[Prefetch] channel cached. Count:', result.result.length);
+
+        // Cache all channel icons to IndexedDB in the background
+        Main.dbInit(function () {
+          Main.cacheLiveTvChannelIcons(result.result, function () {
+            console.log('[Prefetch] Live TV channel icons cached to IDB');
+          });
+        });
+
+        // Now fetch metadata (also without language_uuid)
+        macro.ajax({
+          url: apiPrefixUrl + "channel-feed",
+          type: "GET",
+          headers: { Authorization: "Bearer " + pageDetails.access_token },
+          success: function (res2) {
+            var r2 = typeof res2 === "string" ? JSON.parse(res2) : res2;
+            if (r2 && r2.status === true && r2.result) {
+              Main.liveTvChannelMetaDetails = r2.result;
+              try { localStorage.setItem('liveTvChannelMetaDetails', JSON.stringify(r2.result)); } catch(e) {}
+              console.log('[Prefetch] channel-feed cached. Count:', r2.result.length);
+
+              // Set up 30-min refresh interval
+              if (Main.channelMetaRefreshInterval) {
+                clearInterval(Main.channelMetaRefreshInterval);
+              }
+              Main.channelMetaRefreshInterval = setInterval(function () {
+                Main.channelListUpdatingFiveMinutes();
+              }, 30 * 60 * 1000);
+            } else {
+              console.warn('[Prefetch] channel-feed returned no data');
+            }
+          },
+          error: function (err) {
+            console.warn('[Prefetch] channel-feed error:', err);
+            try {
+              var cached = localStorage.getItem('liveTvChannelMetaDetails');
+              if (cached) { Main.liveTvChannelMetaDetails = JSON.parse(cached); }
+            } catch(e) {}
+          },
+          timeout: 60000
+        });
+      } else {
+        console.warn('[Prefetch] channel returned no data');
+        // Fallback from localStorage
+        try {
+          var cachedId = localStorage.getItem('liveTvChannelIdDetails');
+          if (cachedId) { Main.liveTvChannelIdDetails = JSON.parse(cachedId); }
+          var cachedMeta = localStorage.getItem('liveTvChannelMetaDetails');
+          if (cachedMeta) { Main.liveTvChannelMetaDetails = JSON.parse(cachedMeta); }
+        } catch(e) {}
+      }
+    },
+    error: function (err) {
+      console.warn('[Prefetch] channel error:', err);
+      try {
+        var cachedId = localStorage.getItem('liveTvChannelIdDetails');
+        if (cachedId) { Main.liveTvChannelIdDetails = JSON.parse(cachedId); }
+        var cachedMeta = localStorage.getItem('liveTvChannelMetaDetails');
+        if (cachedMeta) { Main.liveTvChannelMetaDetails = JSON.parse(cachedMeta); }
+      } catch(e) {}
+    },
+    timeout: 60000
+  });
+};
+
+/*=====================================================
 LG CHANNEL API FOR SHOW THE CHANNELS DATA
 ===================================================== */
 Main.lgLgChannelIdApi = function (comingfromWatchTvApp) {
@@ -1866,7 +2272,7 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
         console.log("metadata result----");
         Main.lgLgChannelMetaDetails = result.result;
 
-        // Set up metadata refresh interval (5 minutes)
+        // Set up metadata refresh interval (30 minutes)
         if (Main.lgLgchannelMetaRefreshInterval) {
           clearInterval(Main.lgLgchannelMetaRefreshInterval);
         }
@@ -1892,209 +2298,12 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
           presentPagedetails.lgLgChannelMetaDetails = result.result;
           presentPagedetails.lgLgChannelIdDetails = channelIdDetails;
 
-          console.log("result.result----", result.result);
-
           localStorage.setItem('lgLgChannelMetaDetails', JSON.stringify(result.result));
           localStorage.setItem('lgLgChannelIdDetails', JSON.stringify(channelIdDetails));
 
           // 🔥 START VIDEO PLAYBACK WITH HCAP MEDIA
           if (typeof hcap !== "undefined" && Main.lgLgChannelIdDetails && Main.lgLgChannelIdDetails[0] && Main.lgLgChannelIdDetails[0].ch_media_static_url) {
-            
-            // Helper: minimal macro replacer
-            function buildMediaUrl(templateUrl, values, opts) {
-              opts = opts || {};
-              var url = templateUrl || '';
-              url = url.replace(/\[([A-Z0-9_]+)\]/g, function (_, macro) {
-                if (values && Object.prototype.hasOwnProperty.call(values, macro)) {
-                  var v = values[macro];
-                  if (typeof v === 'undefined' || v === null) return '[' + macro + ']';
-                  if (typeof v === 'boolean') v = v ? '1' : '0';
-                  return encodeURIComponent(String(v));
-                }
-                return '[' + macro + ']';
-              });
-              if (opts.removeEmptyParams) {
-                url = url.replace(/([?&][^=]+=)\[.*?\](?=&|$)/g, '');
-                url = url.replace(/[&?]+$/g, '');
-                url = url.replace(/[?&]+/g, function (m) { return m.indexOf('?') >= 0 ? '?' : '&'; }).replace(/\?&/, '?');
-              }
-              return url;
-            }
-
-            // Helper: guess mime type
-            function guessMimeTypeFromUrl(u) {
-              try {
-                var p = (u || '').split('?')[0].toLowerCase();
-                if (p.indexOf('.m3u8', p.length - 5) !== -1) return 'application/x-mpegURL';
-                if (p.indexOf('.mp4', p.length - 4) !== -1) return 'video/mp4';
-                if (p.indexOf('.ts', p.length - 3) !== -1) return 'video/mp2t';
-                if (p.indexOf('.mp3', p.length - 4) !== -1) return 'audio/mpeg';
-                return 'application/x-mpegURL';
-              } catch (e) { return 'application/x-mpegURL'; }
-            }
-
-            // Play final URL via HCAP (no popups)
-            function playFinalUrl(finalUrl) {
-              if (!finalUrl) {
-                console.error('Final URL is empty – aborting playback');
-                return;
-              }
-
-              var mime = guessMimeTypeFromUrl(finalUrl);
-
-              if (!(window.hcap && hcap.Media && hcap.Media.startUp)) {
-                console.error('HCAP media API not available');
-                return;
-              }
-
-              try {
-                hcap.Media.startUp({
-                  onSuccess: function () {
-                    // cleanup previous media (best-effort)
-                    try {
-                      if (window._currentHcapMedia) {
-                        try {
-                          window._currentHcapMedia.stop({ 
-                            onSuccess: function () { console.log('Previous media stop: success'); }, 
-                            onFailure: function (f) { console.warn('Previous media stop: fail', f); } 
-                          });
-                        } catch (eStop) { console.warn('Previous media stop threw', eStop); }
-                        try {
-                          window._currentHcapMedia.destroy({ 
-                            onSuccess: function () { console.log('Previous media destroy: success'); }, 
-                            onFailure: function (f) { console.warn('Previous media destroy: fail', f); } 
-                          });
-                        } catch (eDestroy) { console.warn('Previous media destroy threw', eDestroy); }
-                        window._currentHcapMedia = null;
-                      }
-                    } catch (exCleanup) {
-                      console.warn('cleanup failed', exCleanup);
-                    }
-
-                    // create media
-                    try {
-                      var media = null;
-                      try {
-                        media = hcap.Media.createMedia({
-                          url: finalUrl,
-                          mimeType: mime,
-                        });
-                      } catch (eCm) {
-                        console.error('hcap.Media.createMedia threw', eCm);
-                      }
-
-                      if (!media) {
-                        console.error('hcap.Media.createMedia returned null for', finalUrl);
-                        return;
-                      }
-                      window._currentHcapMedia = media;
-                      console.log('createMedia: success');
-
-                      // play
-                      media.play({
-                        onSuccess: function () {
-                          macro('#lgChannel_tuningText').css('display', 'none');
-                          macro('.tv-guide-container').css('display', 'none');
-                          console.log('media.play success', finalUrl);
-                        },
-                        onFailure: function (f) {
-                          console.error('media.play failed:', f && f.errorMessage ? f.errorMessage : f);
-                          try { 
-                            media.destroy({ 
-                              onSuccess: function () { 
-                                window._currentHcapMedia = null; 
-                                console.log('destroy after play failure: success'); 
-                              }, 
-                              onFailure: function () { 
-                                window._currentHcapMedia = null; 
-                                console.warn('destroy after play failure: fail'); 
-                              } 
-                            }); 
-                          } catch (e) {}
-                        }
-                      });
-                    } catch (eCreate) {
-                      console.error('Exception creating/playing media', eCreate);
-                      try { if (media && media.destroy) media.destroy({}); } catch (e) {}
-                    }
-                  },
-                  onFailure: function (f) {
-                    console.error('hcap.Media.startUp failed', f);
-                  }
-                });
-              } catch (ex) {
-                console.error('playFinalUrl exception', ex);
-              }
-            }
-
-            // Best-effort gather HCAP properties and expand macros
-            function gatherPropsAndPlay(urlTemplate) {
-              var values = {};
-              values.DEVICE_ID = '';
-              values.DEVICE_MODEL = '';
-              values.COUNTRY = '';
-              values.APP_NAME = (typeof window.APP_NAME !== 'undefined') ? window.APP_NAME : (presentPagedetails && presentPagedetails.appName ? presentPagedetails.appName : 'MyApp');
-              values.APP_VERSION = (typeof window.APP_VERSION !== 'undefined') ? window.APP_VERSION : '1.0.0';
-              values.NONCE = (Math.random().toString(36).substr(2, 9));
-
-              if (window.hcap && hcap.property && hcap.property.getProperty) {
-                try {
-                  hcap.property.getProperty({
-                    key: 'serial_number',
-                    onSuccess: function (resp) {
-                      try { values.DEVICE_ID = resp && resp.value ? resp.value : values.DEVICE_ID; } catch (e) {}
-                      try {
-                        hcap.property.getProperty({
-                          key: 'model_name',
-                          onSuccess: function (r2) {
-                            try { values.DEVICE_MODEL = r2 && r2.value ? r2.value : values.DEVICE_MODEL; } catch (e) {}
-                            var final = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                            console.log('Final URL ready', final);
-                            playFinalUrl(final);
-                          },
-                          onFailure: function () {
-                            var final2 = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                            console.log('Final URL (without model_name)', final2);
-                            playFinalUrl(final2);
-                          }
-                        });
-                      } catch (err2) {
-                        var final3 = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                        playFinalUrl(final3);
-                      }
-                    },
-                    onFailure: function (f) {
-                      try {
-                        hcap.property.getProperty({
-                          key: 'model_name',
-                          onSuccess: function (r2) {
-                            try { values.DEVICE_MODEL = r2 && r2.value ? r2.value : values.DEVICE_MODEL; } catch (e) {}
-                            var f = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                            playFinalUrl(f);
-                          },
-                          onFailure: function () {
-                            var f2 = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                            playFinalUrl(f2);
-                          }
-                        });
-                      } catch (err) {
-                        var ff = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                        playFinalUrl(ff);
-                      }
-                    }
-                  });
-                } catch (e) {
-                  var fallback = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                  playFinalUrl(fallback);
-                }
-              } else {
-                var noProp = buildMediaUrl(urlTemplate, values, { removeEmptyParams: true });
-                playFinalUrl(noProp);
-              }
-            }
-
-            // Begin macro expansion and play
-            gatherPropsAndPlay(Main.lgLgChannelIdDetails[0].ch_media_static_url);
+            Navigation.playSelectedChannel(Main.lgLgChannelIdDetails[0].ch_media_static_url);
           }
           
 
@@ -2153,6 +2362,59 @@ Main.lgLgChannelListUpdatingFiveMinutes = function () {
   })
 }
 
+/**
+ * Main._filterAndSortLiveTvChannels(channelIdDetails)
+ *
+ * Filters the full channel list by Main.clickedLanguage (language_uuid)
+ * and sorts by priority_order ascending.
+ * If no matching channels found for the language, returns the full list sorted.
+ */
+Main._filterAndSortLiveTvChannels = function (channelIdDetails) {
+  if (!Array.isArray(channelIdDetails) || !channelIdDetails.length) return channelIdDetails || [];
+
+  var langUuid = Main.clickedLanguage || "";
+  var filtered = channelIdDetails;
+
+  if (langUuid) {
+    var byLang = channelIdDetails.filter(function (ch) {
+      return ch && ch.language_uuid === langUuid;
+    });
+    if (byLang.length > 0) {
+      filtered = byLang;
+      console.log('[LiveTV Filter] Filtered by language_uuid=' + langUuid + ' → ' + filtered.length + ' channels');
+    } else {
+      console.warn('[LiveTV Filter] No channels for language_uuid=' + langUuid + ', using full list');
+    }
+  }
+
+  return filtered.slice().sort(function (a, b) {
+    return (a.priority_order || 0) - (b.priority_order || 0);
+  });
+};
+
+/**
+ * Main._filterAndSortLiveTvMeta(channelMetaDetails)
+ *
+ * Optionally filters metadata by language_uuid if the meta objects carry it.
+ * Falls back to returning all metadata if no language field is present.
+ */
+Main._filterAndSortLiveTvMeta = function (channelMetaDetails) {
+  if (!Array.isArray(channelMetaDetails) || !channelMetaDetails.length) return channelMetaDetails || [];
+
+  var langUuid = Main.clickedLanguage || "";
+  if (!langUuid) return channelMetaDetails;
+
+  // Only filter if at least one meta object has language_uuid
+  var hasLangField = channelMetaDetails.some(function (m) { return m && m.language_uuid; });
+  if (!hasLangField) return channelMetaDetails; // no language field — return all
+
+  var filtered = channelMetaDetails.filter(function (m) {
+    return m && m.language_uuid === langUuid;
+  });
+
+  return filtered.length > 0 ? filtered : channelMetaDetails;
+};
+
 /*=====================================================
 LIVE TV CHANNEL API FOR SHOW THE CHANNELS DATA
 ===================================================== */
@@ -2164,9 +2426,16 @@ LIVE TV CHANNEL API FOR SHOW THE CHANNELS DATA
  * return successfully) and the offline path (using localStorage cache).
  * Renders the live TV player page, tunes to the first channel, and sets
  * up the tuning-text and overlay hide timers.
+ *
+ * NOTE: channelIdDetails passed here must already be filtered+sorted by
+ * the caller using _filterAndSortLiveTvChannels().
  */
 Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
-  Main.HideLoading();
+  // Track when loading started so we can enforce a minimum display time.
+  // ShowLoading() is always called by the caller before invoking this function.
+  var _loadStart   = Date.now();
+  var _LOAD_MIN_MS = 800; // minimum ms the loader must stay visible
+
   Main.addBackData("liveTvPlayer");
 
   macro("#mainContent").html('');
@@ -2177,12 +2446,10 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
   view = "liveTvPlayer";
   document.body.style.background = 'none';
 
-  // Persist to localStorage so next cold start can use this data
-  try { localStorage.setItem('liveTvChannelMetaDetails', JSON.stringify(channelMetaDetails)); } catch(e) {}
-  try { localStorage.setItem('liveTvChannelIdDetails',   JSON.stringify(channelIdDetails));   } catch(e) {}
-
-  presentPagedetails.liveTvChannelMetaDetails = channelMetaDetails;
+  // Store the filtered-by-language lists into presentPagedetails
+  // so navigation and guide use the correct subset
   presentPagedetails.liveTvChannelIdDetails   = channelIdDetails;
+  presentPagedetails.liveTvChannelMetaDetails = channelMetaDetails;
 
   // Tune to first channel
   if (channelIdDetails && channelIdDetails[0] && channelIdDetails[0].lg_ch_url) {
@@ -2256,6 +2523,15 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
     }
   }
 
+  // ── Hide loader only after minimum display time has elapsed ─────────
+  // This mirrors the original behavior where the loader stayed visible
+  // for the full duration of the channel + channel-feed API calls.
+  var _elapsed   = Date.now() - _loadStart;
+  var _remaining = _LOAD_MIN_MS - _elapsed;
+  setTimeout(function () {
+    Main.HideLoading();
+  }, _remaining > 0 ? _remaining : 0);
+
   // Hide tuning text after 3 seconds with fade
   setTimeout(function () {
     var tuningText = document.getElementById("liveChannel_tuningText");
@@ -2281,29 +2557,30 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
 /**
  * Main.liveTvChannelIdApi(comingfromWatchTvApp)
  *
- * Online: fetches the channel list from the API.
- * Offline (Main._restoredFromCache): skips both API calls and renders
- * directly from the localStorage-cached channel data.
+ * Uses prefetched/cached data when available.
+ * Filters channels by Main.clickedLanguage at render time.
+ * URLs do NOT include language_uuid — filtering is done in JS.
  */
 Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
+
   // ── Offline path: use cached channel data from localStorage ──────────
   if (Main._restoredFromCache) {
     var cachedIdDetails   = Main.liveTvChannelIdDetails   || presentPagedetails.liveTvChannelIdDetails;
     var cachedMetaDetails = Main.liveTvChannelMetaDetails || presentPagedetails.liveTvChannelMetaDetails;
 
-    if (cachedIdDetails && cachedIdDetails.length > 0 && cachedMetaDetails) {
+    if (cachedIdDetails && cachedIdDetails.length > 0) {
       console.log('[Offline] LIVETV: using cached channel data from localStorage');
       Main.ShowLoading();
-      // Restore into runtime vars in case they were only on presentPagedetails
       Main.liveTvChannelIdDetails   = cachedIdDetails;
       Main.liveTvChannelMetaDetails = cachedMetaDetails;
       if (comingfromWatchTvApp) {
-        Main._renderLiveTvPlayer(cachedIdDetails, cachedMetaDetails);
+        var filteredId   = Main._filterAndSortLiveTvChannels(cachedIdDetails);
+        var filteredMeta = Main._filterAndSortLiveTvMeta(cachedMetaDetails);
+        Main._renderLiveTvPlayer(filteredId, filteredMeta);
       }
       return;
     }
 
-    // Cached data not available — show informative message
     console.warn('[Offline] LIVETV: no cached channel data available');
     Main.addBackData("liveTv");
     macro("#mainContent").html('');
@@ -2318,20 +2595,67 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
     return;
   }
 
-  // ── Online path: fetch from API ───────────────────────────────────────
+  console.log("Main.liveTvChannelIdDetails-------------------->", Main.liveTvChannelIdDetails)
+  console.log("Main.liveTvChannelMetaDetails-------------------->", Main.liveTvChannelMetaDetails)
+
+  // ── Fast path: prefetch data already ready ────────────────────────────
+  if (Main.liveTvChannelIdDetails && Main.liveTvChannelIdDetails.length > 0) {
+    console.log('[liveTvChannelIdApi] Using prefetched data — skipping API call');
+    if (comingfromWatchTvApp) {
+      Main.ShowLoading();
+      var filteredId   = Main._filterAndSortLiveTvChannels(Main.liveTvChannelIdDetails);
+      var filteredMeta = Main._filterAndSortLiveTvMeta(Main.liveTvChannelMetaDetails);
+      Main._renderLiveTvPlayer(filteredId, filteredMeta);
+    }
+    return;
+  }
+
+  // ── Fallback: try localStorage cache ─────────────────────────────────
+  try {
+    var cachedId   = localStorage.getItem('liveTvChannelIdDetails');
+    var cachedMeta = localStorage.getItem('liveTvChannelMetaDetails');
+    if (cachedId && cachedMeta) {
+      var parsedId   = JSON.parse(cachedId);
+      var parsedMeta = JSON.parse(cachedMeta);
+      if (parsedId && parsedId.length > 0) {
+        Main.liveTvChannelIdDetails   = parsedId;
+        Main.liveTvChannelMetaDetails = parsedMeta;
+        console.log('[liveTvChannelIdApi] Restored from localStorage cache');
+        // Cache icons from IDB (they may already be stored — fast no-op if so)
+        Main.dbInit(function () {
+          Main.cacheLiveTvChannelIcons(parsedId, function () {
+            console.log('[liveTvChannelIdApi] Icons rehydrated from IDB (localStorage path)');
+          });
+        });
+        if (comingfromWatchTvApp) {
+          Main.ShowLoading();
+          var filteredId   = Main._filterAndSortLiveTvChannels(parsedId);
+          var filteredMeta = Main._filterAndSortLiveTvMeta(parsedMeta || []);
+          Main._renderLiveTvPlayer(filteredId, filteredMeta);
+        }
+        return;
+      }
+    }
+  } catch(e) { console.warn('[liveTvChannelIdApi] localStorage restore error:', e); }
+
+  // ── Network fetch (first boot / cache miss) — NO language_uuid in URL ─
+  console.log('[liveTvChannelIdApi] Fetching from network…');
   Main.ShowLoading();
   macro.ajax({
-    url: apiPrefixUrl + "channel?ch.language_uuid=" + Main.clickedLanguage,
+    url: apiPrefixUrl + "channel",
     type: "GET",
-    headers: {
-      Authorization: "Bearer " + pageDetails.access_token,
-    },
+    headers: { Authorization: "Bearer " + pageDetails.access_token },
     success: function (response) {
       var result = typeof response === "string" ? JSON.parse(response) : response;
-      console.log("liveTvChannelIdApi result:", result);
-
-      if (result.status === true && result.result && result.result.length > 0) {
+      if (result && result.status === true && result.result && result.result.length > 0) {
         Main.liveTvChannelIdDetails = result.result;
+        try { localStorage.setItem('liveTvChannelIdDetails', JSON.stringify(result.result)); } catch(e) {}
+        // Cache all channel icons to IDB in background
+        Main.dbInit(function () {
+          Main.cacheLiveTvChannelIcons(result.result, function () {
+            console.log('[liveTvChannelIdApi] Icons cached to IDB (network path)');
+          });
+        });
         Main.liveTvChannelApiMetaData(comingfromWatchTvApp, result.result);
       } else {
         Main.HideLoading();
@@ -2349,26 +2673,35 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
     },
     error: function (err) {
       Main.HideLoading();
-      console.error("API error for Live Tv Channel data:", err);
+      Main.addBackData("liveTv");
+        macro("#mainContent").html('');
+        macro("#mainContent").html(
+          '<div id="noProgramInfo" style="width:100%;height:100%;background:#000;display:flex;align-items:center;justify-content:center;position:fixed;top:0;left:0;z-index:9999;">' +
+            '<span style="color:#fff;font-size:36px;font-family:Arial,sans-serif;letter-spacing:1px;">No Program Info Available</span>' +
+          '</div>'
+        );
+        macro("#mainContent").show();
+        presentPagedetails.view = "liveTv";
+        view = "liveTv";
+      console.error('[liveTvChannelIdApi] API error:', err);
     },
-    timeout: 60000,
+    timeout: 60000
   });
 };
 
 Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) {
-  Main.ShowLoading();
+  // Note: ShowLoading() is already active — called by liveTvChannelIdApi before this.
   macro.ajax({
-    url: apiPrefixUrl + "channel-feed?ch.language_uuid=" + Main.clickedLanguage,
+    url: apiPrefixUrl + "channel-feed",
     type: "GET",
-    headers: {
-      Authorization: "Bearer " + pageDetails.access_token,
-    },
+    headers: { Authorization: "Bearer " + pageDetails.access_token },
     success: function (response) {
       var result = typeof response === "string" ? JSON.parse(response) : response;
 
       Main.liveTvChannelMetaDetails = result.result;
+      try { localStorage.setItem('liveTvChannelMetaDetails', JSON.stringify(result.result)); } catch(e) {}
 
-      // Set up metadata refresh interval (30 minutes)
+      // Set up 30-min metadata refresh interval
       if (Main.channelMetaRefreshInterval) {
         clearInterval(Main.channelMetaRefreshInterval);
       }
@@ -2376,15 +2709,19 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
         Main.channelListUpdatingFiveMinutes();
       }, 30 * 60 * 1000);
 
-      if (comingfromWatchTvApp == true) {
-        Main._renderLiveTvPlayer(channelIdDetails, result.result);
+      if (comingfromWatchTvApp === true) {
+        // Filter + sort by language at render time
+        var filteredId   = Main._filterAndSortLiveTvChannels(channelIdDetails);
+        var filteredMeta = Main._filterAndSortLiveTvMeta(result.result);
+        Main._renderLiveTvPlayer(filteredId, filteredMeta);
+        return; // HideLoading called inside _renderLiveTvPlayer
       }
 
       Main.HideLoading();
     },
     error: function (err) {
       Main.HideLoading();
-      console.error("API error For Live Tv channel Metadata:", err);
+      console.error('[liveTvChannelApiMetaData] API error:', err);
     },
     timeout: 60000
   });
@@ -2392,7 +2729,7 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
 
 Main.channelListUpdatingFiveMinutes = function () {
   macro.ajax({
-    url: apiPrefixUrl + "channel-feed?ch.language_uuid="+ Main.clickedLanguage,
+    url: apiPrefixUrl + "channel-feed",
     type: "GET",
     headers: {
       Authorization: "Bearer " + pageDetails.access_token,
@@ -2401,14 +2738,17 @@ Main.channelListUpdatingFiveMinutes = function () {
       var result = typeof response === "string" ? JSON.parse(response) : response;
 
       if(result.status === true) {
-        presentPagedetails.liveTvChannelMetaDetails = result.result;
+        Main.liveTvChannelMetaDetails = result.result;
+        var filteredMeta = Main._filterAndSortLiveTvMeta(result.result);
+        presentPagedetails.liveTvChannelMetaDetails = filteredMeta;
+        try { localStorage.setItem('liveTvChannelMetaDetails', JSON.stringify(result.result)); } catch(e) {}
       }
     },
     error: function (err) {
       Main.HideLoading();
-      console.log("API error For Live Tv channel Refresh Metadata:", err);
+      console.log('[channelListUpdatingFiveMinutes] API error:', err);
     }
-  })
+  });
 }
 
 /**

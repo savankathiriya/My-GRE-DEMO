@@ -741,3 +741,46 @@ function renderTemplateCanvas() {
         }
     }
 }
+
+function checkNetworkAndLaunch(appName, launchFn) {
+    console.log('[checkNetworkAndLaunch] Checking network before launching:', appName);
+
+    try {
+        if (typeof idcap === "undefined" || !idcap.request) {
+            console.warn('[checkNetworkAndLaunch] idcap not available, proceeding with launch');
+            launchFn();
+            return;
+        }
+
+        idcap.request("idcap://network/configuration/get", {
+            parameters: {},
+            onSuccess: function (cbObject) {
+                var wiredState = cbObject && cbObject.wired ? cbObject.wired.state : "disconnected";
+                var wifiState  = cbObject && cbObject.wifi  ? cbObject.wifi.state  : "disconnected";
+
+                console.log('[checkNetworkAndLaunch] wiredState =', wiredState, '| wifiState =', wifiState);
+
+                var isConnected = (wiredState === "connected") || (wifiState === "connected");
+
+                if (isConnected) {
+                    console.log('[checkNetworkAndLaunch] Network available, launching:', appName);
+                    launchFn();
+                } else {
+                    console.warn('[checkNetworkAndLaunch] No network connection. Blocking launch of:', appName);
+                    utilities.genricPopup(
+                        'Internet connection is unavailable at the moment. Live TV is still available.',
+                        'info'
+                    );
+                }
+            },
+            onFailure: function (err) {
+                console.error('[checkNetworkAndLaunch] idcap network check failed:', err && err.errorMessage);
+                // Fail-open: if check itself fails, still allow launch
+                launchFn();
+            }
+        });
+    } catch (e) {
+        console.error('[checkNetworkAndLaunch] Exception:', e.message);
+        launchFn();
+    }
+}

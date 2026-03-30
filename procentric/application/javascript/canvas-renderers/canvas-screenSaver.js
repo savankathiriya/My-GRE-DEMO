@@ -168,6 +168,46 @@ var ScreenSaver = (function () {
     ───────────────────────────────────────────────────────────────── */
 
     /**
+     * Checks network availability via hcap.network.getNetworkInformation.
+     * Calls callback(true) if network is available, callback(false) otherwise.
+     * Falls back to callback(true) if hcap.network is not accessible,
+     * so the screen saver is not blocked on platforms without the API.
+     */
+    function _checkNetworkThenArm(callback) {
+        try {
+            if (typeof idcap === 'undefined' || typeof idcap.request !== 'function') {
+                _warn('_checkNetworkThenArm: idcap not available — assuming network OK');
+                callback(true);
+                return;
+            }
+
+            idcap.request("idcap://network/configuration/get", {
+                parameters: {},
+                onSuccess: function (cbObject) {
+                    var wiredState = cbObject && cbObject.wired ? cbObject.wired.state : "disconnected";
+                    var wifiState  = cbObject && cbObject.wifi  ? cbObject.wifi.state  : "disconnected";
+
+                    var isConnected = (wiredState === "connected") || (wifiState === "connected");
+
+                    _log('Network check — wiredState=' + wiredState +
+                        ' | wifiState=' + wifiState +
+                        ' → isConnected=' + isConnected);
+
+                    callback(isConnected);
+                },
+                onFailure: function (err) {
+                    _warn('_checkNetworkThenArm: idcap network check failed — errorMessage=' +
+                        (err && err.errorMessage) + ' — assuming network OK');
+                    callback(true);
+                }
+            });
+        } catch (e) {
+            _warn('_checkNetworkThenArm: exception=' + e + ' — assuming network OK');
+            callback(true);
+        }
+    }
+
+    /**
      * ScreenSaver.armIdleTimer()
      *
      * Starts (or resets) the idle countdown using
@@ -177,6 +217,7 @@ var ScreenSaver = (function () {
      *   • screen saver is already active
      *   • Main.screenSaverData is not ready yet
      *   • screen_saver_start_time is 0 or missing
+     *   • network is not available (checked via hcap.network.getNetworkInformation)
      */
     function armIdleTimer() {
         if (_active) return;
@@ -200,21 +241,30 @@ var ScreenSaver = (function () {
             return;
         }
 
-        _clearTimer();
-        _log('Idle timer armed: ' + idleSec + 's');
-
-        _idleTimer = setTimeout(function () {
-            // Only fire on home or language page
-            if (view !== 'macroHome' && view !== 'languagePage') {
-                _log('Timer fired on view="' + view + '" — re-arming');
-                armIdleTimer();
+        // Check network availability before arming the timer.
+        // If no network, the screen saver is skipped entirely for this arm cycle.
+        _checkNetworkThenArm(function (networkAvailable) {
+            if (!networkAvailable) {
+                _warn('armIdleTimer: network not available — screen saver will not start');
                 return;
             }
-            _log('Idle threshold reached — launching screen saver');
-            _currentIdx    = 0;     // always start from highest-priority entry
-            _isFirstLaunch = true;  // ensure addBackData is called on first launch
-            _launch();
-        }, idleSec * 1000);
+
+            _clearTimer();
+            _log('Idle timer armed: ' + idleSec + 's');
+
+            _idleTimer = setTimeout(function () {
+                // Only fire on home or language page
+                if (view !== 'macroHome' && view !== 'languagePage') {
+                    _log('Timer fired on view="' + view + '" — re-arming');
+                    armIdleTimer();
+                    return;
+                }
+                _log('Idle threshold reached — launching screen saver');
+                _currentIdx    = 0;     // always start from highest-priority entry
+                _isFirstLaunch = true;  // ensure addBackData is called on first launch
+                _launch();
+            }, idleSec * 1000);
+        });
     }
 
     /**

@@ -139,49 +139,49 @@ Navigation.languagePageNavigation = function (event) {
       break;
     }
     case tvKeyCode.Enter: {
+      console.log("called----------------------->")
       var uuid = macro(".imageFocus").attr("uuid");
       presentPagedetails.clickedLanguage = uuid;
       Main.clickedLanguage = uuid;
 
       var textOfLang = id ? document.getElementById(id).textContent : "";
 
-      // Detect offline: provision-auth failed and we booted from localStorage cache
-      var isOffline = !!Main._restoredFromCache;
+      // 1) Try fully-cached menu for this language
+      var cached = (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
 
-      // Build filtered+sorted raw items for this language from homePageData
-      var rawItems = [];
+      if (cached.length > 0){
+        // Already image-cached items for this language
+        Main.renderHomePage(cached);
+        break;
+      }
+
+      // 2) If we already have the raw homePageData, filter/sort for this language
       if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
-        rawItems = Main.homePageData
-          .filter(function (x) { return x && x.is_active === true && x.language_uuid === uuid; })
-          .sort(function (a, b) { return (a.priority_order || 0) - (b.priority_order || 0); });
+        var items = Main.homePageData
+          .filter(function (x) {
+            return x && x.is_active === true && x.language_uuid === uuid;
+          })
+          .sort(function (a, b) {
+            return (a.priority_order || 0) - (b.priority_order || 0);
+          });
+
+        if (items.length) {
+          // Ensure images for this language are pulled from IndexedDB (no extra API)
+          Main.cacheHomeImageAssetsByLanguage(
+            items,
+            uuid,
+            function (cachedGroup) {
+              Main.cachedHomeByLang[uuid] = cachedGroup || [];
+              Main.renderHomePage(Main.cachedHomeByLang[uuid]);
+            }
+          );
+          break;
+        }
       }
 
-      // Helper: load images from IDB (idbOnly=true when offline) then render.
-      // Always re-reads blobs from IDB even when cachedHomeByLang exists because
-      // blob: URLs are ephemeral and do not survive a cold TV reboot.
-      function loadAndRender(items) {
-        Main.cacheHomeImageAssetsByLanguage(items, uuid, function (cachedGroup) {
-          Main.cachedHomeByLang = Main.cachedHomeByLang || {};
-          Main.cachedHomeByLang[uuid] = cachedGroup || [];
-          Main.renderHomePage(Main.cachedHomeByLang[uuid]);
-        }, isOffline /* idbOnly — no XHR when offline */);
-      }
-
-      // Path 1 & 2: homePageData is available (online or restored from localStorage)
-      if (rawItems.length > 0) {
-        loadAndRender(rawItems);
-        break;
-      }
-
-      // Path 3: no homePageData at all
-      if (isOffline) {
-        // Cannot fetch from network — nothing to show
-        console.error('[Offline] No homePageData available for language:', uuid);
-        break;
-      }
-
-      // Online fallback: fetch from network then render
+      // 3) Last resort: we do not have data yet at fetch once, then render
       Main.getHomeData(function () {
+        console.log("getHomeData called----------------------------->")
         var items2 = (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
         if (items2.length) {
           Main.renderHomePage(items2);
@@ -192,6 +192,65 @@ Navigation.languagePageNavigation = function (event) {
 
       break;
     }
+
+    // used when device is completly offline at start
+    // case tvKeyCode.Enter: {
+    //   console.log("called----------------------->")
+    //   var uuid = macro(".imageFocus").attr("uuid");
+    //   presentPagedetails.clickedLanguage = uuid;
+    //   Main.clickedLanguage = uuid;
+
+    //   var textOfLang = id ? document.getElementById(id).textContent : "";
+
+    //   // Detect offline: provision-auth failed and we booted from localStorage cache
+    //   var isOffline = !!Main._restoredFromCache;
+
+    //   // Build filtered+sorted raw items for this language from homePageData
+    //   var rawItems = [];
+    //   if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
+    //     rawItems = Main.homePageData
+    //       .filter(function (x) { return x && x.is_active === true && x.language_uuid === uuid; })
+    //       .sort(function (a, b) { return (a.priority_order || 0) - (b.priority_order || 0); });
+    //   }
+
+    //   // Helper: load images from IDB (idbOnly=true when offline) then render.
+    //   // Always re-reads blobs from IDB even when cachedHomeByLang exists because
+    //   // blob: URLs are ephemeral and do not survive a cold TV reboot.
+    //   function loadAndRender(items) {
+    //     console.log("loadAndRender called-------------------------->")
+    //     Main.cacheHomeImageAssetsByLanguage(items, uuid, function (cachedGroup) {
+    //       Main.cachedHomeByLang = Main.cachedHomeByLang || {};
+    //       Main.cachedHomeByLang[uuid] = cachedGroup || [];
+    //       Main.renderHomePage(Main.cachedHomeByLang[uuid]);
+    //     }, isOffline /* idbOnly — no XHR when offline */);
+    //   }
+
+    //   // Path 1 & 2: homePageData is available (online or restored from localStorage)
+    //   if (rawItems.length > 0) {
+    //     loadAndRender(rawItems);
+    //     break;
+    //   }
+
+    //   // Path 3: no homePageData at all
+    //   if (isOffline) {
+    //     // Cannot fetch from network — nothing to show
+    //     console.error('[Offline] No homePageData available for language:', uuid);
+    //     break;
+    //   }
+
+    //   // Online fallback: fetch from network then render
+    //   Main.getHomeData(function () {
+    //     console.log("getHomeData called----------------------------->")
+    //     var items2 = (Main.cachedHomeByLang && Main.cachedHomeByLang[uuid]) || [];
+    //     if (items2.length) {
+    //       Main.renderHomePage(items2);
+    //     } else {
+    //       console.error("No cached items available for language:", uuid);
+    //     }
+    //   });
+
+    //   break;
+    // }
 
     case 8:
     case tvKeyCode.Return:
@@ -242,6 +301,8 @@ Navigation.homePageLoad = function (menuData) {
       i--;
       continue;
     }
+
+    console.log("item-------------------------->", item)
 
     // Build markup for this (valid) item  use current i so IDs are contiguous
     var bgImage =
@@ -411,6 +472,17 @@ Navigation.homePageNavigation = function (event) {
       break;
     }
 
+    // =====================================================
+    // CHANNEL UP / DOWN — open Live TV directly from home
+    // =====================================================
+    case tvKeyCode.ChannelUp:
+    case tvKeyCode.ChannelDown: {
+      console.log('[Home] ChannelUp/Down pressed — launching Live TV');
+      var comingfromWatchTvApp = true;
+      Main.liveTvChannelIdApi(comingfromWatchTvApp);
+      break;
+    }
+
     case tvKeyCode.Enter: {
       // if (splitData[0] === "menu" && appUrl) {
       //     console.log('Launching app:', source, 'with URL:', appUrl);
@@ -434,38 +506,42 @@ Navigation.homePageNavigation = function (event) {
         Util.DevicesSwitchPage();
       }
       else if (appUrl === "Netflix") {
-        hcap.preloadedApplication.launchPreloadedApplication({
-          id: Main.lgSettings.netflix_app_id, // this id i have get from the hcap document
-          parameters: JSON.stringify({
-            reason: "launcher",  // or "hotKey" / "boot"
-            params: {
-              hotel_id: "GRE1234",
-              launcher_version: "1.0"  // Just for your tracking
+        checkNetworkAndLaunch("Netflix" , function () {
+          hcap.preloadedApplication.launchPreloadedApplication({
+            id: Main.lgSettings.netflix_app_id, // this id i have get from the hcap document
+            parameters: JSON.stringify({
+              reason: "launcher",  // or "hotKey" / "boot"
+              params: {
+                hotel_id: "GRE1234",
+                launcher_version: "1.0"  // Just for your tracking
+              }
+            }),
+            onSuccess: function(response) {
+              Main.deviceActivity("close","page","Home screen");
+              Main.deviceActivity("open","app",source);
+              console.log("Netflix Opend successfully")
+            },
+            onFailure: function(err) {
+              console.log("Netflix launch failed: " + err.errorMessage);
             }
-          }),
-          onSuccess: function(response) {
-            Main.deviceActivity("close","page","Home screen");
-            Main.deviceActivity("open","app",source);
-            console.log("Netflix Opend successfully")
-          },
-          onFailure: function(err) {
-             console.log("Netflix launch failed: " + err.errorMessage);
-          }
+          })
         })
       }
       else if (appUrl === "Youtube") {
-        hcap.preloadedApplication.launchPreloadedApplication({
-          id: Main.lgSettings.youtube_app_id,
-          parameters: "{}",
-          onSuccess: function(response) {
-            Main.deviceActivity("close","page","Home screen");
-            Main.deviceActivity("open","app",source);
-            console.log("YouTube launched successfully");
-          },
-          onFailure: function (f) {
-            console.log("YouTube not loaded:", f.errorMessage);
-          }
-        })
+        checkNetworkAndLaunch("Youtube" , function () {
+          hcap.preloadedApplication.launchPreloadedApplication({
+            id: Main.lgSettings.youtube_app_id,
+            parameters: "{}",
+            onSuccess: function(response) {
+              Main.deviceActivity("close","page","Home screen");
+              Main.deviceActivity("open","app",source);
+              console.log("YouTube launched successfully");
+            },
+            onFailure: function (f) {
+              console.log("YouTube not loaded:", f.errorMessage);
+            }
+          })
+        }) 
       }
       else if(appUrl === "accuweather") {
         hcap.preloadedApplication.launchPreloadedApplication({
@@ -514,14 +590,18 @@ Navigation.homePageNavigation = function (event) {
         Main.deviceActivity("open","page",source);
       }
       else if(appUrl === "Casting") {
-        Main.handleGoogleCast();
+        checkNetworkAndLaunch("Casting", function () {
+          Main.handleGoogleCast();
+        })
       }
       else if (appUrl === "LGTV") {
-        var comingfromWatchTvApp = true;
-        Main.deviceActivity("close","page","Home screen");
-        Main.deviceActivity("open","app",source);
-        console.log("LGTV app launched");
-        Main.lgLgChannelIdApi(comingfromWatchTvApp)
+        checkNetworkAndLaunch("LG TV", function () {
+          var comingfromWatchTvApp = true;
+          Main.deviceActivity("close","page","Home screen");
+          Main.deviceActivity("open","app",source);
+          console.log("LGTV app launched");
+          Main.lgLgChannelIdApi(comingfromWatchTvApp)
+        })
       }
       else if (appUrl === "LIVETV") {
         var comingfromWatchTvApp = true;
@@ -530,14 +610,18 @@ Navigation.homePageNavigation = function (event) {
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "OurHotel") {
-        Main.deviceActivity("close","page","Home screen");
-        Main.deviceActivity("open","page",source);
-        Main.jsontemplateApi(app_url);
+        checkNetworkAndLaunch("Our Hotel", function () {
+          Main.deviceActivity("close","page","Home screen");
+          Main.deviceActivity("open","page",source);
+          Main.jsontemplateApi(app_url);
+        })
       }
       else if (appUrl === "Playlist") {
-        Main.deviceActivity("close","page","Home screen");
-        Main.deviceActivity("open","page",source);
-        Main.playlistApi(app_url);
+        checkNetworkAndLaunch("Playlist", function () {
+          Main.deviceActivity("close","page","Home screen");
+          Main.deviceActivity("open","page",source);
+          Main.playlistApi(app_url);
+        })
       }
 
       break;
