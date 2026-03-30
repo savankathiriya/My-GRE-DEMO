@@ -605,8 +605,8 @@ Navigation.homePageNavigation = function (event) {
       }
       else if (appUrl === "LIVETV") {
         var comingfromWatchTvApp = true;
-        // Main.deviceActivity("close","page","Home screen");
-        // Main.deviceActivity("open","app",source);
+        Main.deviceActivity("close","page","Home screen");
+        Main.deviceActivity("open","app",source);
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "OurHotel") {

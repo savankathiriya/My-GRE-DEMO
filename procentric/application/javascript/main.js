@@ -1164,6 +1164,8 @@ Main.loadCachedImagesThenRender = function() {
 				view = "languagePage";
 				presentPagedetails.view = view;
 
+        Main.updateDeviceDetailsSendApi();
+
 				macro("#mainContent").html('');
 				macro("#mainContent").html(Util.languageSelection());
 				macro("#mainContent").show();
@@ -1296,8 +1298,6 @@ Main.renderHomePage = function (applist) {
   // Set focus to first app
   macro(".imageFocus").removeClass("imageFocus");
   macro("#menu-item-0").addClass("imageFocus");
-
-  Main.updateDeviceDetailsSendApi();
 
   // Re-arm screen saver idle timer each time home page is shown
   try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.armIdleTimer(); } catch (e) {}
@@ -1951,7 +1951,6 @@ Main.updateDeviceDetailsSendApi = function () {
     var data = JSON.stringify({
       gcm_token: "",
       mac_address: deviceMac || "",
-      language_uuid: Main.clickedLanguage || "",
       device_network_ip: deviceIp || "",
       device_name: deviceDetails.tv_name || "",
       device_model: deviceDetails.model_name || "",
@@ -2451,6 +2450,34 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
   presentPagedetails.liveTvChannelIdDetails   = channelIdDetails;
   presentPagedetails.liveTvChannelMetaDetails = channelMetaDetails;
 
+  hcap.mode.setHcapMode({
+                  mode: hcap.mode.HCAP_MODE_1,
+                  onSuccess: function () {
+                      // utilities.genricPopup("HCAP mode 1 set");
+                      console.log("HCAP mode 1 set");
+                  },
+                  onFailure: function (f) {
+                      console.log("Failed to set HCAP mode: " + f.errorMessage);
+                      // utilities.genricPopup(f.errorMessage, 'info');
+                  }
+              });
+
+  hcap.preloadedApplication.launchPreloadedApplication({
+                  id: "201712141624040010", // Live TV App ID
+                  parameters: "{}",
+                  onSuccess: function () {
+                      macro("#watchChannel_tuningText").css('display', 'none'); 
+
+                      console.log("WatchTV launched");
+                  },
+                  onFailure: function (f) {
+                      console.log("Failed to launch WatchTV: ", f.errorMessage);
+                      // utilities.genricPopup(f.errorMessage, 'info');
+                  }
+              });
+
+
+
   // Tune to first channel
   if (channelIdDetails && channelIdDetails[0] && channelIdDetails[0].lg_ch_url) {
     var chUrl = channelIdDetails[0].lg_ch_url;
@@ -2516,6 +2543,18 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
           console.error("[Live TV] Failed to change logical channel via HCAP:", error);
         }
       });
+
+       hcap.mode.setHcapMode({
+                      mode: hcap.mode.HCAP_MODE_1,
+                      onSuccess: function () {
+                          //  utilities.genricPopup("HCAP mode 1 set");
+                          console.log("HCAP mode 2 set");
+                      },
+                      onFailure: function (f) {
+                          console.log("Failed to set HCAP mode: " + f.errorMessage);
+                          // utilities.genricPopup(f.errorMessage, 'info');
+                      }
+                  });
     }
 
     else {

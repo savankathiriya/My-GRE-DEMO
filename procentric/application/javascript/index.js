@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.960"
+	appVersion:"v1.795"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -1042,7 +1042,7 @@ function handleMqttCommand(cmd, data, topic) {
 
   function mqtt_takeScreenshot(data) {
     if (!data || !data.put_presign_url) {
-      console.error("Missing put_presign_url in MQTT payload");
+      console.error("[Screenshot] Missing put_presign_url in MQTT payload");
       return;
     }
 
