@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.795"
+	appVersion:"v1.796"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -1218,6 +1218,19 @@ function handleMqttCommand(cmd, data, topic) {
       },
       error: function(err) {
         console.error("Failed to send status info:", err);
+
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "MQTT_CMD_POST_FAILED",
+          error_message: "Failed to send MQTT command",
+          error_source:  "sendInfoToBackend",
+          module:        "mqtt_command_handler",
+          extra_data: {
+            status_code:  err && err.status  ? err.status  : undefined,
+            status_text:  err && err.statusText ? err.statusText : undefined,
+            response_text: err && err.responseText ? err.responseText : undefined
+          }
+        });
       },
       timeout: 60000
     })

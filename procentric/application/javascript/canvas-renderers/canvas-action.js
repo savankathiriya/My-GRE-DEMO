@@ -1560,6 +1560,21 @@ var CanvasAction = (function () {
                 },
                 error: function (err) {
                     console.error('[CanvasAction] AJAX error:', err);
+
+                    Main.logTvException({
+                        error_type:    "API_ERROR",
+                        error_code:    "fetch_playlist_data_failed",
+                        error_message: "Failed to fetch playlist data API",
+                        error_source:  "Main.playlistApi",
+                        module:        "playlist",
+                        action:        "fetch_playlist_data",
+                        extra_data: {
+                        status_code:  err && err.status  ? err.status  : undefined,
+                        status_text:  err && err.statusText ? err.statusText : undefined,
+                        response_text: err && err.responseText ? err.responseText : undefined
+                        }
+                    });
+
                     // Pop the history entry we just pushed since navigation failed
                     if (Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0) {
                         Main.pageHistory.pop();

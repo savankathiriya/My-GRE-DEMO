@@ -784,3 +784,155 @@ function checkNetworkAndLaunch(appName, launchFn) {
         launchFn();
     }
 }
+
+/*=====================================================
+TV EXCEPTION LOG API
+===================================================== */
+Main.logTvException = function (options) {
+  try {
+    options = options || {};
+
+    // ── Reserved top-level field names ──────────────────────────────────
+    // Any unknown key passed in options goes into extra_data automatically
+    var TOP_LEVEL_FIELDS = {
+      app_version:      true,
+      error_code:       true,
+      error_type:       true,
+      error_message:    true,
+      error_source:     true,
+      stack_trace:      true,
+      module:           true,
+      action:           true,
+      guest_checked_in: true,
+      room_number:      true,
+      device_timestamp: true,
+      extra_data:       true
+    };
+
+    // ── Auto ISO timestamp (timezone-aware) ─────────────────────────────
+    function _isoNow() {
+      try {
+        var tz = Main.deviceProfile &&
+                 Main.deviceProfile.property_detail &&
+                 Main.deviceProfile.property_detail.property_timezone;
+
+        // property timezone → device local timezone → UTC
+        var resolvedTz = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        if (resolvedTz) {
+          var parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: resolvedTz,
+            year:     'numeric', month:  '2-digit', day:    '2-digit',
+            hour:     '2-digit', minute: '2-digit', second: '2-digit',
+            hour12:   false
+          }).formatToParts(new Date());
+
+          var m = {};
+          parts.forEach(function (p) { m[p.type] = p.value; });
+
+          return m.year + '-' + m.month + '-' + m.day + 'T' +
+                 m.hour + ':' + m.minute + ':' + m.second;
+        }
+      } catch (e) { /* fall through */ }
+
+      // Last resort — UTC
+      return new Date().toISOString();
+    }
+
+    // ── Only add meaningful values ───────────────────────────────────────
+    function _set(obj, key, value) {
+      if (value === null || value === undefined || value === '') return;
+      if (typeof value === 'string' && value.trim() === '') return;
+      obj[key] = value;
+    }
+
+    // ── Build top-level payload ──────────────────────────────────────────
+    var payload = {};
+
+    _set(payload, 'app_version',
+         options.app_version !== undefined ? options.app_version : appConfig.appVersion);
+
+    _set(payload, 'error_code',    options.error_code);
+    _set(payload, 'error_type',    options.error_type);
+    _set(payload, 'error_message', options.error_message);
+    _set(payload, 'error_source',  options.error_source);
+    _set(payload, 'stack_trace',   options.stack_trace);
+    _set(payload, 'module',        options.module);
+    _set(payload, 'action',        options.action);
+
+    // boolean — include only when explicitly passed
+    if (typeof options.guest_checked_in === 'boolean') {
+      payload.guest_checked_in = options.guest_checked_in;
+    }
+
+    // room_number: caller → deviceProfile fallback
+    var roomNo = options.room_number ||
+                 (Main.deviceProfile && Main.deviceProfile.room_number) || '';
+    _set(payload, 'room_number', roomNo);
+
+    payload.device_timestamp = options.device_timestamp || _isoNow();
+
+    // ── Build extra_data ─────────────────────────────────────────────────
+    // Layer 1: explicit extra_data object from caller
+    // Layer 2: any unknown top-level keys from options
+    // Layer 3: auto-attached device identifiers
+    var extra = {};
+
+    // Layer 1 — caller's explicit extra_data (any fields allowed)
+    if (options.extra_data && typeof options.extra_data === 'object') {
+      for (var k in options.extra_data) {
+        if (options.extra_data.hasOwnProperty(k)) {
+          extra[k] = options.extra_data[k];
+        }
+      }
+    }
+
+    // Layer 2 — unknown top-level keys auto-route into extra_data
+    for (var key in options) {
+      if (options.hasOwnProperty(key) && !TOP_LEVEL_FIELDS[key]) {
+        extra[key] = options[key];
+      }
+    }
+
+    // Layer 3 — always attach device identifiers for server-side correlation
+    if (deviceMac)          extra.mac_address  = deviceMac;
+    if (deviceSerialNumber) extra.serial_number = deviceSerialNumber;
+    if (deviceIp)           extra.device_ip     = deviceIp;
+
+    if (Object.keys(extra).length > 0) {
+      payload.extra_data = extra;
+    }
+
+    // ── Guard: need auth token ───────────────────────────────────────────
+    if (!pageDetails || !pageDetails.access_token) {
+      console.warn('[logTvException] Skipped — access_token not available yet');
+      return;
+    }
+
+    console.log('[logTvException] Posting:', payload);
+
+    macro.ajax({
+      url:         apiPrefixUrl + 'tv-exception-log',
+      type:        'POST',
+      data:        JSON.stringify(payload),
+      contentType: 'application/json; charset=utf-8',
+      headers: {
+        Authorization: 'Bearer ' + pageDetails.access_token
+      },
+      success: function (response) {
+        console.log('[logTvException] Logged successfully');
+      },
+      error: function (err) {
+        // Silent — never affects existing functionality
+        console.warn('[logTvException] API error (non-fatal):', err);
+      },
+      timeout: 30000
+    });
+
+  } catch (e) {
+    // Outer try/catch — if anything inside this function throws for any
+    // reason, it is silently swallowed so existing functionality is
+    // never affected
+    console.warn('[logTvException] Unexpected error (non-fatal):', e);
+  }
+};
