@@ -42,6 +42,69 @@ img.imgLoader {
   }
 }
 
+/* =====================================================
+   CANVAS-PAGE LINE LOADER  (#ca-line-loader)
+   Shown by canvas-action.js → handleDynamicPageAction()
+   during canvas-to-canvas navigation.
+   Mirrors the same show/hide pattern as #loading:
+     show : document.createElement('div') id="ca-line-loader" appended to body
+     hide : element removed from DOM after fade-out
+   The circular spinner (.loader-bg + .imgLoader) is NOT
+   used during these transitions — this bar replaces it.
+   ===================================================== */
+
+@-webkit-keyframes caLineGlow {
+  0%, 100% {
+    -webkit-box-shadow: 0 0 8px 2px rgba(99, 179, 237, 0.8);
+            box-shadow: 0 0 8px 2px rgba(99, 179, 237, 0.8);
+  }
+  50% {
+    -webkit-box-shadow: 0 0 18px 4px rgba(99, 179, 237, 1);
+            box-shadow: 0 0 18px 4px rgba(99, 179, 237, 1);
+  }
+}
+
+@keyframes caLineGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px 2px rgba(99, 179, 237, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 18px 4px rgba(99, 179, 237, 1);
+  }
+}
+
+#ca-line-loader {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 0%;                /* JS (requestAnimationFrame) drives width — no CSS transition here */
+  height: 5px;
+  background: -webkit-linear-gradient(
+    left,
+    #1d4ed8 0%,
+    #3b82f6 40%,
+    #63b3ed 75%,
+    #90cdf4 100%
+  );
+  background: linear-gradient(
+    90deg,
+    #1d4ed8 0%,
+    #3b82f6 40%,
+    #63b3ed 75%,
+    #90cdf4 100%
+  );
+  z-index: 999999;           /* same stacking level as .loader-bg */
+  border-radius: 0 3px 3px 0;
+  pointer-events: none;
+  -webkit-animation: caLineGlow 1.6s ease-in-out infinite;
+          animation: caLineGlow 1.6s ease-in-out infinite;
+}
+
+/* NOTE: width transition and opacity transition are applied
+   inline by JS only during the snap-to-100% and fade-out
+   phases — keeping them out of CSS avoids LG webOS WebKit
+   buffering/skipping intermediate width frames during fill. */
+
 @font-face {
   font-family: "lufga";
   src: url(./fonts/lufga_regular.woff2) format("woff2"),

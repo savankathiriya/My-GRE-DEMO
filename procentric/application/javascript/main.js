@@ -86,6 +86,37 @@ Main.processTrigger = function (rawEvent) {
 Main.addBackData = function (path) {
   presentPagedetails.htmlData = (macro('#mainContent').html() ).toString();
 
+  // ── Save home page focus state before leaving ─────────────────────
+  // When navigating away FROM macroHome, capture the currently focused
+  // menu item index and the menu-inner scroll offset so that
+  // Main.previousPage() can restore exactly where the user was.
+  if (view === 'macroHome') {
+    try {
+      var focusedEl = macro('.imageFocus');
+      var focusedId = focusedEl.attr('id') || '';
+      var parts = focusedId.split('-');
+      // id format is "menu-item-N"
+      if (parts.length === 3 && parts[0] === 'menu' && parts[1] === 'item') {
+        presentPagedetails.lastFocusedMenuIndex = parseInt(parts[2], 10) || 0;
+      } else {
+        presentPagedetails.lastFocusedMenuIndex = 0;
+      }
+      // Also save the horizontal scroll offset of the menu strip
+      var menuInner = document.querySelector('.menu-inner');
+      if (menuInner) {
+        var style = menuInner.style.transform || '';
+        var match = style.match(/translateX\((-?[\d.]+)px\)/);
+        presentPagedetails.lastMenuScrollX = match ? parseFloat(match[1]) : 0;
+      } else {
+        presentPagedetails.lastMenuScrollX = 0;
+      }
+    } catch (e) {
+      presentPagedetails.lastFocusedMenuIndex = 0;
+      presentPagedetails.lastMenuScrollX = 0;
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────
+
   if(path == "MyDevice" || path == "liveTv" || path == "casting" || path == "lgLgLiveTv" || path == "liveTvPlayer" || path == "ourHotel" || path == "playlist") {
     backData.push(presentPagedetails);
     presentPagedetails = {}
@@ -99,10 +130,88 @@ Main.previousPage = function () {
 
   if(backData.length > 0) {
     presentPagedetails = backData[backData.length-1];
-    macro("#mainContent").html('');
-    macro("#mainContent").html(presentPagedetails.htmlData);
     backData.pop();
     view = presentPagedetails.view;
+
+    // ── FAST RE-RENDER for home / language page ───────────────────────
+    // Blob URLs stored inside presentPagedetails.htmlData can become
+    // invalid on LG webOS (blobs are session-scoped and the TV's WebKit
+    // may have already garbage-collected them). Re-rendering from the
+    // in-memory caches (Main.cachedBgBlobUrl, cachedPropertyLogo, etc.)
+    // is instant and always uses a valid URL — no IDB round-trip needed.
+    if (view === 'macroHome') {
+      try {
+        var langId = presentPagedetails.clickedLanguage || Main.clickedLanguage || '';
+        var cachedApps = (Main.cachedHomeByLang && Main.cachedHomeByLang[langId]) || [];
+
+        // Re-render fresh home page directly — this is the same call path
+        // used when the user first selects a language on the language page.
+        Main.renderHomePage(cachedApps);
+
+        // ── Restore previously focused menu item + scroll position ───
+        // renderHomePage() always resets focus to #menu-item-0.
+        // We override that here using the index we saved in addBackData().
+        var savedIdx     = presentPagedetails.lastFocusedMenuIndex || 0;
+        var savedScrollX = presentPagedetails.lastMenuScrollX      || 0;
+
+        if (savedIdx > 0 || savedScrollX !== 0) {
+          // Use setTimeout(0) so the DOM from renderHomePage/homePageLoad
+          // is fully painted before we try to re-focus.
+          setTimeout(function () {
+            try {
+              macro('.imageFocus').removeClass('imageFocus');
+              var target = macro('#menu-item-' + savedIdx);
+              if (target.length) {
+                target.addClass('imageFocus');
+              } else {
+                macro('#menu-item-0').addClass('imageFocus');
+              }
+              // Restore the horizontal scroll of the menu strip
+              if (savedScrollX !== 0) {
+                macro('.menu-inner').css({
+                  transition: 'none',
+                  transform:  'translateX(' + savedScrollX + 'px)'
+                });
+              }
+            } catch (e) {
+              console.warn('[previousPage] Focus restore error:', e);
+            }
+          }, 0);
+        }
+        // ────────────────────────────────────────────────────────────
+
+        try {
+          if (typeof ScreenSaver !== 'undefined') ScreenSaver.armIdleTimer();
+        } catch (e) {}
+        return;
+      } catch (e) {
+        console.warn('[previousPage] Fast home re-render failed, falling back to HTML restore:', e);
+        // Fall through to HTML restore below
+      }
+    }
+
+    if (view === 'languagePage') {
+      try {
+        macro("#mainContent").html('');
+        macro("#mainContent").html(Util.languageSelection());
+        macro("#mainContent").show();
+        macro('.imageFocus').removeClass('imageFocus');
+        macro('#lang_btn-0').addClass('imageFocus');
+
+        try {
+          if (typeof ScreenSaver !== 'undefined') ScreenSaver.armIdleTimer();
+        } catch (e) {}
+        return;
+      } catch (e) {
+        console.warn('[previousPage] Fast language re-render failed, falling back to HTML restore:', e);
+        // Fall through to HTML restore below
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
+    // For all other pages (casting, MyDevice, etc.) restore from stored HTML
+    macro("#mainContent").html('');
+    macro("#mainContent").html(presentPagedetails.htmlData);
 
     // Re-arm screen saver idle timer when returning to home or language page,
     // clear it when navigating to any other page.
@@ -519,6 +628,7 @@ Main.deviceRegistrationAPi = function () {
         //   console.log('[Offline] App opened from cache after provision-auth returned no result');
         //   return;
         // }
+        console.log("APi Failed---------------------------------------------------------->", result)
 
         var qrData = getQrData(deviceSerialNumber, deviceMac);
 
@@ -1372,11 +1482,19 @@ Main.renderHomePage = function (applist) {
   macro("#mainContent").html(Util.homePageHtml());
 
   Main.ShowLoading();
-  Navigation.homePageLoad(applist)
+  Navigation.homePageLoad(applist);
+
+  // Hide loader: use a short delay only when navigating FROM the language page
+  // for the very first time (images may still be writing to IDB). On subsequent
+  // back-navigations the images are already in Main.cachedHomeByLang memory so
+  // we can hide immediately. We use requestAnimationFrame to give the browser
+  // one paint cycle to composite the new HTML before hiding the loader.
+  var _homeBgAlreadyCached = !!(Main.cachedBgBlobUrl);
+  var _hideDelay = _homeBgAlreadyCached ? 0 : 400;
 
   setTimeout(function () {
     Main.HideLoading();
-  }, 1200)
+  }, _hideDelay);
   
   macro("#mainContent").show();
   // Set focus to first app
@@ -1840,7 +1958,7 @@ Main.jsontemplateApi = function(AppUrl) {
   console.log('[API] Fetching template data...');
 
   // Show the loading spinner using the correct global function
-  Main.ShowLoading();
+  _showCanvasLineLoader();
   var _tplLoadStart       = Date.now();
   var _TPL_LOADING_MIN_MS = 1000;
 
@@ -1851,9 +1969,9 @@ Main.jsontemplateApi = function(AppUrl) {
     var _elapsed   = Date.now() - _tplLoadStart;
     var _remaining = _TPL_LOADING_MIN_MS - _elapsed;
     if (_remaining > 0) {
-      setTimeout(function () { Main.HideLoading(); }, _remaining);
+      setTimeout(function () { _hideCanvasLineLoader(); }, _remaining);
     } else {
-      Main.HideLoading();
+      _hideCanvasLineLoader();
     }
   }
 
@@ -2455,7 +2573,8 @@ LG CHANNEL API FOR SHOW THE CHANNELS DATA
 ===================================================== */
 Main.lgLgChannelIdApi = function (comingfromWatchTvApp) {
   console.log("loading called---");
-  Main.ShowLoading();
+  // Main.ShowLoading();
+  _showCanvasLineLoader();
   macro.ajax({
     url: apiPrefixUrl + "lg-channel",
     type: "GET",
@@ -2471,11 +2590,13 @@ Main.lgLgChannelIdApi = function (comingfromWatchTvApp) {
         Main.lgLgChannelIdDetails = result.result;
         Main.lgLgChannelApiMetaData(comingfromWatchTvApp,result.result);
       }else {
-        Main.HideLoading();
+        // Main.HideLoading();
+        _hideCanvasLineLoader();
       }
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
 
       Main.logTvException({
         error_type:    "API_ERROR",
@@ -2498,7 +2619,8 @@ Main.lgLgChannelIdApi = function (comingfromWatchTvApp) {
 
 Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) {
   console.log("metadata called----");
-  Main.ShowLoading();
+  // Main.ShowLoading();
+  _showCanvasLineLoader();
   macro.ajax({
     url: apiPrefixUrl + "lg-channel-feed",
     type: "GET",
@@ -2521,7 +2643,8 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
         }, 30 * 60 * 1000);
 
         if (comingfromWatchTvApp == true) {
-          Main.HideLoading();
+          // Main.HideLoading();
+          _hideCanvasLineLoader();
           Main.addBackData("lgLgLiveTv");
           
           // 🔥 Show empty page with tuning text and overlay
@@ -2571,10 +2694,12 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
           }, 10000);
         }
       }
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
 
       Main.logTvException({
         error_type:    "API_ERROR",
@@ -2610,7 +2735,8 @@ Main.lgLgChannelListUpdatingFiveMinutes = function () {
       }
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
 
       Main.logTvException({
         error_type:    "API_ERROR",
@@ -2837,7 +2963,8 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
   var _elapsed   = Date.now() - _loadStart;
   var _remaining = _LOAD_MIN_MS - _elapsed;
   setTimeout(function () {
-    Main.HideLoading();
+    // Main.HideLoading();
+    _hideCanvasLineLoader();
   }, _remaining > 0 ? _remaining : 0);
 
   // Hide tuning text after 3 seconds with fade
@@ -2878,7 +3005,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
 
     if (cachedIdDetails && cachedIdDetails.length > 0) {
       console.log('[Offline] LIVETV: using cached channel data from localStorage');
-      Main.ShowLoading();
+      // Main.ShowLoading();
+      _showCanvasLineLoader();
       Main.liveTvChannelIdDetails   = cachedIdDetails;
       Main.liveTvChannelMetaDetails = cachedMetaDetails;
       if (comingfromWatchTvApp) {
@@ -2910,7 +3038,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
   if (Main.liveTvChannelIdDetails && Main.liveTvChannelIdDetails.length > 0) {
     console.log('[liveTvChannelIdApi] Using prefetched data — skipping API call');
     if (comingfromWatchTvApp) {
-      Main.ShowLoading();
+      // Main.ShowLoading();
+      _showCanvasLineLoader();
       var filteredId   = Main._filterAndSortLiveTvChannels(Main.liveTvChannelIdDetails);
       var filteredMeta = Main._filterAndSortLiveTvMeta(Main.liveTvChannelMetaDetails);
       Main._renderLiveTvPlayer(filteredId, filteredMeta);
@@ -2936,7 +3065,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
           });
         });
         if (comingfromWatchTvApp) {
-          Main.ShowLoading();
+          // Main.ShowLoading();
+          _showCanvasLineLoader();
           var filteredId   = Main._filterAndSortLiveTvChannels(parsedId);
           var filteredMeta = Main._filterAndSortLiveTvMeta(parsedMeta || []);
           Main._renderLiveTvPlayer(filteredId, filteredMeta);
@@ -2948,7 +3078,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
 
   // ── Network fetch (first boot / cache miss) — NO language_uuid in URL ─
   console.log('[liveTvChannelIdApi] Fetching from network…');
-  Main.ShowLoading();
+  // Main.ShowLoading();
+  _showCanvasLineLoader();
   macro.ajax({
     url: apiPrefixUrl + "channel",
     type: "GET",
@@ -2966,7 +3097,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
         });
         Main.liveTvChannelApiMetaData(comingfromWatchTvApp, result.result);
       } else {
-        Main.HideLoading();
+        // Main.HideLoading();
+        _hideCanvasLineLoader();
         Main.addBackData("liveTv");
         macro("#mainContent").html('');
         macro("#mainContent").html(
@@ -2980,7 +3112,8 @@ Main.liveTvChannelIdApi = function (comingfromWatchTvApp) {
       }
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
       Main.addBackData("liveTv");
         macro("#mainContent").html('');
         macro("#mainContent").html(
@@ -3039,10 +3172,12 @@ Main.liveTvChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails
         return; // HideLoading called inside _renderLiveTvPlayer
       }
 
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
       console.error('[liveTvChannelApiMetaData] API error:', err);
 
       Main.logTvException({
@@ -3081,7 +3216,8 @@ Main.channelListUpdatingFiveMinutes = function () {
       }
     },
     error: function (err) {
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
       console.log('[channelListUpdatingFiveMinutes] API error:', err);
 
       Main.logTvException({

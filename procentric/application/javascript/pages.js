@@ -1490,11 +1490,36 @@ Util.liveTvGuideFullScreen = function (channelData, metaData) {
   setTimeout(function() {
     setInterval(function () {
       var d = new Date();
-      var formatted = d.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true
-      });
+      var formatted;
+
+      try {
+        var tz = Main.deviceProfile &&
+                  Main.deviceProfile.property_detail &&
+                  Main.deviceProfile.property_detail.property_timezone;
+
+        if (tz) {
+          formatted = d.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: tz
+          });
+        } else {
+          formatted = d.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        }
+      } catch (e) {
+        // Fallback if timezone string is invalid
+        formatted = d.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+
       var el = document.getElementById("liveGuideCurrentTime");
       if (el) el.innerHTML = formatted;
     }, 1000);

@@ -442,7 +442,8 @@ Main.blockMdnsDiscovery = function (block, callback) {
  */
 Main.handleGoogleCast = function () {
   console.log("[Google Cast] ---- Starting Google Cast flow ----");
-  Main.ShowLoading();
+  // Main.ShowLoading();
+  _showCanvasLineLoader();
 
   // Step 5: Set human-readable TV name FIRST.
   // tv_name is reset whenever room_number changes, so we set it every session
@@ -478,7 +479,8 @@ Main.handleGoogleCast = function () {
 
       if (!GoogleCastState.tokenRegistered) {
         console.error("[Google Cast] Token not registered — aborting");
-        Main.HideLoading();
+        // Main.HideLoading();
+        _hideCanvasLineLoader();
         utilities.genricPopup("Google Cast is not available on this device.", "info");
         return;
       }
@@ -492,7 +494,8 @@ Main.handleGoogleCast = function () {
         } else {
           console.log("[Google Cast] Apps missing — starting installation");
           Main.installGoogleCast(function (success) {
-            Main.HideLoading();
+            // Main.HideLoading();
+            _hideCanvasLineLoader();
             if (success) {
               console.log("[Google Cast] Installation complete — waiting for service");
               setTimeout(function () { Main._waitForServiceReady(); }, 2000);
@@ -518,7 +521,8 @@ Main._waitForServiceReady = function () {
   if (GoogleCastState.serviceStatus === "Ready" ||
       GoogleCastState.serviceStatus === "Active") {
     console.log("[Google Cast] Service ready — launching guide");
-    Main.HideLoading();
+    // Main.HideLoading();
+    _hideCanvasLineLoader();
     Main.launchGoogleCastGuide();
     return;
   }
@@ -536,11 +540,13 @@ Main._waitForServiceReady = function () {
     if (GoogleCastState.serviceStatus === "Ready" ||
         GoogleCastState.serviceStatus === "Active") {
       clearInterval(checkInterval);
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
       Main.launchGoogleCastGuide();
     } else if (waitCount >= maxWait) {
       clearInterval(checkInterval);
-      Main.HideLoading();
+      // Main.HideLoading();
+      _hideCanvasLineLoader();
       console.warn("[Google Cast] Service not ready after " + maxWait + "s — launching anyway");
       Main.launchGoogleCastGuide();
     }

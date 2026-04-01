@@ -1470,26 +1470,25 @@ var CanvasAction = (function () {
             });
         }
 
-        if (typeof Main.ShowLoading === 'function') Main.ShowLoading();
+        /* Show the bottom line loader — replaces the circular spinner
+           so the canvas content behind it remains visible while loading  */
+        _showCanvasLineLoader();
 
-        // ── Track loading start time so we can enforce a minimum 6-second display
+        // ── Track loading start time so we can enforce a minimum display
         var loadingStartTime = Date.now();
         var LOADING_MIN_MS   = 1200;
 
         /**
-         * Hides the loading indicator only after the minimum display time has
-         * elapsed.  If the API responded faster than 6 s, we wait out the
-         * remainder; if it took longer we hide immediately.
+         * Completes the line loader only after the minimum display time has
+         * elapsed so the bar is always visible for at least LOADING_MIN_MS.
          */
         function hideLoadingAfterMinTime() {
             var elapsed   = Date.now() - loadingStartTime;
             var remaining = LOADING_MIN_MS - elapsed;
             if (remaining > 0) {
-                setTimeout(function () {
-                    if (typeof Main.HideLoading === 'function') Main.HideLoading();
-                }, remaining);
+                setTimeout(function () { _hideCanvasLineLoader(); }, remaining);
             } else {
-                if (typeof Main.HideLoading === 'function') Main.HideLoading();
+                _hideCanvasLineLoader();
             }
         }
 
@@ -1528,11 +1527,8 @@ var CanvasAction = (function () {
                             // Restore backgrounds (may have been set transparent for video mode)
                             try { document.body.style.background = ''; } catch(_e) {}
 
-                            // ── Pass hideLoadingAfterMinTime as onReady so the loader
-                            //    hides only AFTER the bg image/video is fully painted.
-                            //    This fixes the white flash on first visit (image bg) and
-                            //    the black flash (video bg). On revisit the image is already
-                            //    in CanvasBase cache so render is synchronous — no flash.
+                            // ── Pass hideLoadingAfterMinTime as onReady so the line loader
+                            //    completes only AFTER the bg image/video is fully painted.
                             macro("#mainContent").html('');
                             if (typeof Util !== 'undefined' && Util.ourHotelPage) {
                                 macro("#mainContent").html(Util.ourHotelPage(hideLoadingAfterMinTime));

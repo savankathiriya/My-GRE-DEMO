@@ -697,19 +697,19 @@ Navigation.ourHotelPageNavigation = function (event) {
         case 10009:
             console.log('[Navigation] Exiting OurHotel page');
 
-            // ── Step 1 (INSTANT): Show loading spinner to cover the screen.
-            //    Loading will remain visible for a minimum of 6 seconds.
-            var _exitLoadStart = Date.now();
+            // ── Only show the line loader when navigating canvas→canvas.
+            //    If pageHistory is empty we are on the last canvas page and
+            //    navigateBackCanvas() will call Main.previousPage() which goes
+            //    straight to home/language page — no loader needed there.
+            var _hasCanvasHistory = Array.isArray(Main.pageHistory) && Main.pageHistory.length > 0;
+
+            var _exitLoadStart       = Date.now();
             var _EXIT_LOADING_MIN_MS = 1200;
 
-            try {
-                if (typeof Main !== 'undefined' && Main.ShowLoading) {
-                    Main.ShowLoading();
-                }
-            } catch (e) {}
+            if (_hasCanvasHistory) {
+                try { _showCanvasLineLoader(); } catch (e) {}
+            }
 
-            // ── Step 2: Run cleanup + render previous page behind the loader,
-            //    then hide loading only after the 6-second window has elapsed.
             setTimeout(function () {
 
                 // Stop HLS streams
@@ -729,41 +729,33 @@ Navigation.ourHotelPageNavigation = function (event) {
                     try { if (typeof CanvasAction    !== 'undefined') CanvasAction.cleanup();     } catch (_) {}
                 }
 
-                // Remove bg-video-wrap explicitly (it lives on document.body, outside mainContent)
+                // Remove bg-video-wrap explicitly
                 try {
                     var _bgWrap = document.getElementById('bg-video-wrap');
                     if (_bgWrap && _bgWrap.parentNode) { _bgWrap.parentNode.removeChild(_bgWrap); }
                 } catch (e) {}
 
-                // Restore body background (set to 'none' for video mode)
+                // Restore body background
                 try { document.body.style.background = ''; } catch (e) {}
 
-                // ── Render the previous template page NOW (behind the loading overlay).
-                //    navigateBackCanvas restores jsonTemplateData and calls ourHotelPage()
-                //    so the page is fully painted before the loader is lifted.
+                // Navigate back
                 if (typeof Main !== 'undefined' && Main.navigateBackCanvas) {
                     Main.navigateBackCanvas();
                 } else if (typeof Main !== 'undefined' && Main.previousPage) {
                     Main.previousPage();
                 }
 
-                // ── Hide loading only after the full 6-second window has elapsed.
-                var _elapsed   = Date.now() - _exitLoadStart;
-                var _remaining = _EXIT_LOADING_MIN_MS - _elapsed;
-                if (_remaining > 0) {
-                    setTimeout(function () {
-                        try {
-                            if (typeof Main !== 'undefined' && Main.HideLoading) {
-                                Main.HideLoading();
-                            }
-                        } catch (e) {}
-                    }, _remaining);
-                } else {
-                    try {
-                        if (typeof Main !== 'undefined' && Main.HideLoading) {
-                            Main.HideLoading();
-                        }
-                    } catch (e) {}
+                // Hide loader only when it was shown (canvas→canvas path)
+                if (_hasCanvasHistory) {
+                    var _elapsed   = Date.now() - _exitLoadStart;
+                    var _remaining = _EXIT_LOADING_MIN_MS - _elapsed;
+                    if (_remaining > 0) {
+                        setTimeout(function () {
+                            try { _hideCanvasLineLoader(); } catch (e) {}
+                        }, _remaining);
+                    } else {
+                        try { _hideCanvasLineLoader(); } catch (e) {}
+                    }
                 }
 
             }, 100);

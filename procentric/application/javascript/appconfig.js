@@ -5,6 +5,9 @@ var clockIntervalId = null;
 var currentHdmiType = null;
 var currentHdmiIndex = null;
 
+var _caLineLoaderRafId = null;   // requestAnimationFrame handle
+var _caLineLoaderDone  = false;  // signals _tick() to stop self-advancing
+
 function startHdmiMonitor(type, index) {
     console.log('[HDMI Monitor] Starting monitor for type:', type, 'index:', index);
     currentHdmiType = type;
@@ -936,3 +939,99 @@ Main.logTvException = function (options) {
     console.warn('[logTvException] Unexpected error (non-fatal):', e);
   }
 };
+
+
+/* ================================================================
+    CANVAS-PAGE LINE LOADER
+    A thin progress bar that slides in from the left along the bottom
+    edge of the screen.  Used ONLY by handleDynamicPageAction so the
+    standard circular spinner (#loading / .loader-bg) is never shown
+    during canvas-to-canvas navigation.
+
+    Behaviour:
+        _showCanvasLineLoader()  → appends #ca-line-loader to <body>,
+                                animates width 0 → 85 % (ease-out
+                                cubic, ~8 s) while the API is in-flight.
+        _hideCanvasLineLoader()  → snaps bar to 100 %, brief hold,
+                                then fades out and removes the element.
+        _hideCanvasLineLoader(true) → instant removal (cleanup / stale bar).
+
+    The bar sits at z-index 999999 — same level as .loader-bg — so it
+    is always visible over the canvas content.  CSS lives in styles.css.
+================================================================ */
+
+function _showCanvasLineLoader() {
+    /* Remove any stale bar from a previous call */
+    _hideCanvasLineLoader(true);
+    _caLineLoaderDone = false;
+
+    /* CSS lives in styles.css — no inline injection needed */
+    var bar    = document.createElement('div');
+    bar.id     = 'ca-line-loader';
+    document.body.appendChild(bar);
+
+    /* Animate: 0 → TARGET_PCT over FILL_MS using ease-out cubic */
+    var startTime  = Date.now();
+    var FILL_MS    = 8000;
+    var TARGET_PCT = 85;
+
+    function _tick() {
+        if (_caLineLoaderDone) return;
+        var b = document.getElementById('ca-line-loader');
+        if (!b) return;
+        var elapsed = Date.now() - startTime;
+        var t       = elapsed / FILL_MS;
+        if (t > 1) t = 1;
+        /* ease-out cubic: fast start, slows near the cap */
+        var eased = 1 - (1 - t) * (1 - t) * (1 - t);
+        b.style.width = (eased * TARGET_PCT).toFixed(2) + '%';
+        if (t < 1) {
+            _caLineLoaderRafId = requestAnimationFrame(_tick);
+        }
+    }
+
+    /* Two-frame delay so browser paints the bar at 0 % first */
+    requestAnimationFrame(function () {
+        requestAnimationFrame(_tick);
+    });
+
+    console.log('[CanvasAction] Line loader shown');
+}
+
+function _hideCanvasLineLoader(immediate) {
+    _caLineLoaderDone = true;
+
+    if (_caLineLoaderRafId) {
+        cancelAnimationFrame(_caLineLoaderRafId);
+        _caLineLoaderRafId = null;
+    }
+
+    var bar = document.getElementById('ca-line-loader');
+    if (!bar) return;
+
+    if (immediate) {
+        if (bar.parentNode) bar.parentNode.removeChild(bar);
+        return;
+    }
+
+    /* Snap to 100 % with a short eased transition, then fade out */
+    bar.style.webkitTransition = 'width 0.3s ease-out';
+    bar.style.transition       = 'width 0.3s ease-out';
+    bar.style.width            = '100%';
+
+    setTimeout(function () {
+        var b = document.getElementById('ca-line-loader');
+        if (!b) return;
+        b.style.webkitTransition = 'opacity 0.4s ease-out';
+        b.style.transition       = 'opacity 0.4s ease-out';
+        b.style.opacity          = '0';
+        setTimeout(function () {
+            var b2 = document.getElementById('ca-line-loader');
+            if (b2 && b2.parentNode) b2.parentNode.removeChild(b2);
+        }, 420);
+    }, 280);
+
+    console.log('[CanvasAction] Line loader completing');
+}
+
+/* ── end line loader helpers ─────────────────────────────────── */

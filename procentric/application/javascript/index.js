@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.796"
+	appVersion:"v1.800"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -24,7 +24,8 @@ var tvKeyCode = {
 };
 // var deviceMac = null;
 var deviceMac = '1cf43ff843b4';
-var deviceSerialNumber = null;
+// var deviceSerialNumber = null;
+var deviceSerialNumber = '507kklpk6504';
 var deviceModelName = "";
 var lastNetworkType = "";
 var deviceIp  = null;
