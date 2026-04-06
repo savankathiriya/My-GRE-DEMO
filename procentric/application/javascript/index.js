@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.800"
+	appVersion:"v1.870"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -22,10 +22,10 @@ var tvKeyCode = {
 	Exit: 1001,
 	Guide: 458
 };
-// var deviceMac = null;
-var deviceMac = '1cf43ff843b4';
-// var deviceSerialNumber = null;
-var deviceSerialNumber = '507kklpk6504';
+var deviceMac = null;
+// var deviceMac = '1cf43ff843b4';
+var deviceSerialNumber = null;
+// var deviceSerialNumber = '507kklpk6504';
 var deviceModelName = "";
 var lastNetworkType = "";
 var deviceIp  = null;
@@ -823,6 +823,21 @@ document.addEventListener('output_connection_changed', function(event) {
     }
   });
 });
+
+document.addEventListener('hdmi_connection_changed', function(event) {
+  console.log("hdmi_connection_changed event:", event);
+
+  var hdmiStatus = (event && event.connected) ? "connected" : "disconnected";
+
+      if(hdmiStatus === "disconnected") {
+        handleHdmiConnection();
+      }else if(hdmiStatus === "connected") {
+        Main.addBackData("MyDevice");
+        view = "MyDevice"
+        presentPagedetails.view = view;
+        Util.DevicesSwitchPage();
+      }
+})
 
 document.addEventListener('idcap::mpi_cable_status_changed', function(param) {
   var mpiStatus = (param && param.connected) ? "connected" : "disconnected";

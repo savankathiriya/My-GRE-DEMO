@@ -62,12 +62,16 @@ var CanvasText = (function() {
         // Fetch both data sources once (tolerates missing gracefully)
         var guestInfo = null;
         var propertyDetail = null;
+        var room_number = null;
 
         try {
             if (typeof Main !== 'undefined') {
                 guestInfo      = Main.guestInfoData || null;
                 propertyDetail = (Main.deviceProfile && Main.deviceProfile.property_detail)
                                  ? Main.deviceProfile.property_detail
+                                 : null;
+                room_number   = (Main.deviceProfile && Main.deviceProfile.room_number)
+                                 ? Main.deviceProfile.room_number
                                  : null;
             }
         } catch (e) {
@@ -78,9 +82,13 @@ var CanvasText = (function() {
         var resolved = text.replace(/\{\{([^}]+)\}\}/g, function(match, key) {
             key = key.trim(); // safety trim
 
+            console.log("key--------------------->", key)
+
             if (key.indexOf('g_') === 0) {
                 // --- Guest info variable ---
                 return resolvePlaceholder(match, key, guestInfo, 'guestInfoData');
+            } else if(key === 'room_number') {
+                return String(room_number || '');
             } else {
                 // --- Property detail variable ---
                 return resolvePlaceholder(match, key, propertyDetail, 'property_detail');

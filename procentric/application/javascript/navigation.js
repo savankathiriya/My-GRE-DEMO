@@ -302,8 +302,6 @@ Navigation.homePageLoad = function (menuData) {
       continue;
     }
 
-    console.log("item-------------------------->", item)
-
     // Build markup for this (valid) item  use current i so IDs are contiguous
     var bgImage =
       item._cached_bg_image || item.bg_image || "images/bg_menu1.png";
@@ -507,6 +505,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if (appUrl === "Netflix") {
         checkNetworkAndLaunch("Netflix" , function () {
+          try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.clearIdleTimer(); } catch(e) {}
           hcap.preloadedApplication.launchPreloadedApplication({
             id: Main.lgSettings.netflix_app_id, // this id i have get from the hcap document
             parameters: JSON.stringify({
@@ -529,6 +528,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if (appUrl === "Youtube") {
         checkNetworkAndLaunch("Youtube" , function () {
+          try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.clearIdleTimer(); } catch(e) {}
           hcap.preloadedApplication.launchPreloadedApplication({
             id: Main.lgSettings.youtube_app_id,
             parameters: "{}",
@@ -544,6 +544,7 @@ Navigation.homePageNavigation = function (event) {
         }) 
       }
       else if(appUrl === "accuweather") {
+        try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.clearIdleTimer(); } catch(e) {}
         hcap.preloadedApplication.launchPreloadedApplication({
           id: Main.lgSettings.accuweather_app_id,
           parameters: "{}",
@@ -591,6 +592,7 @@ Navigation.homePageNavigation = function (event) {
       }
       else if(appUrl === "Casting") {
         checkNetworkAndLaunch("Casting", function () {
+          try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.clearIdleTimer(); } catch(e) {}
           Main.handleGoogleCast();
         })
       }

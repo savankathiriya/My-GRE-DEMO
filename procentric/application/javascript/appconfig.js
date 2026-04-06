@@ -145,6 +145,64 @@ function resetHdmiOnStartup() {
     }
 }
 
+function handleHdmiConnection() {
+    try { stopAndClearMedia(); } catch(e){ console.warn('stopAndClearMedia failed', e); }
+    try { exitLiveTv(); } catch (e) { console.warn('exitLiveTv threw', e); }
+    try { clearNoSignalNative(); } catch (e) { console.warn("clearNoSignalNative error:", e); }
+
+    // Always called at the end — regardless of whether HCAP calls succeed or fail
+    function _renderHome() {
+        document.body.style.background = "#000";
+        try {
+            gotoHomeSCreenFromDisconnectPage();
+        } catch (e) {
+            console.warn('[handleHdmiConnection] gotoHomeSCreenFromDisconnectPage threw:', e);
+        }
+    }
+
+    try {
+        if (window.hcap && hcap.externalinput && hcap.mode &&
+            typeof hcap.mode.setHcapMode === 'function') {
+
+            hcap.externalinput.setCurrentExternalInput({
+                type: hcap.externalinput.ExternalInputType.TV,
+                index: 0,
+                onSuccess: function() {
+                    console.log('[handleHdmiConnection] Switched to TV input successfully');
+                    try {
+                        hcap.mode.setHcapMode({
+                            mode: hcap.mode.HCAP_MODE_1,
+                            onSuccess: function() {
+                                console.log('[handleHdmiConnection] HCAP_MODE_1 set successfully');
+                                _renderHome();
+                            },
+                            onFailure: function(f) {
+                                console.warn('[handleHdmiConnection] setHcapMode failed:', f && f.errorMessage);
+                                _renderHome(); // still render even if mode set fails
+                            }
+                        });
+                    } catch (e) {
+                        console.warn('[handleHdmiConnection] setHcapMode threw:', e);
+                        _renderHome(); // still render even if setHcapMode throws
+                    }
+                },
+                onFailure: function(f) {
+                    console.warn('[handleHdmiConnection] setCurrentExternalInput failed:', f && f.errorMessage);
+                    _renderHome(); // still render even if input switch fails
+                }
+            });
+
+        } else {
+            // HCAP not available — render directly
+            console.warn('[handleHdmiConnection] HCAP not available, rendering home directly');
+            _renderHome();
+        }
+    } catch (e) {
+        console.warn('[handleHdmiConnection] threw:', e);
+        _renderHome(); // always render home as final fallback
+    }
+}
+
 utilities.validateString = function (value) {
     if (value == undefined || value == null) return false;
     else if (value.trim() == '') return false;
@@ -376,6 +434,7 @@ function installApp(appId, source) {
 }
 
 function ensureAppInstalled(appId, source) {
+    try { if (typeof ScreenSaver !== 'undefined') ScreenSaver.clearIdleTimer(); } catch(e) {}
     idcap.request("idcap://application/list", {
         "parameters": { "exteraInfo": true },
         "onSuccess": function (s) {
@@ -651,6 +710,8 @@ function gotoHomeSCreenFromDisconnectPage() {
     try {
         var defaultLangId = "";
 
+        console.log("called---------------------->")
+
         if (
 			Main &&
 			Main.templateApiData &&
@@ -661,17 +722,27 @@ function gotoHomeSCreenFromDisconnectPage() {
 		) {
             defaultLangId = Main.templateApiData.language_detail[0].language_uuid;
         }
-        var langId = Main.clickedLanguage ? Main.clickedLanguage : defaultLangId
-        
+        var langId = Main.clickedLanguage ? Main.clickedLanguage : defaultLangId;
+
+        console.log("langId---------------------->", langId);
+
+        // Restore presentPagedetails.clickedLanguage — it gets wiped when
+        // addBackData("MyDevice") does presentPagedetails = {}.
+        // Without this, Util.homePageHtml() cannot build the correct
+        // iconkey and languageShortCut for the header language icon.
+        presentPagedetails.clickedLanguage = langId;
+
         var cached = [];
-        
+
         if (Main && Main.cachedHomeByLang && Main.cachedHomeByLang[langId]) {
           cached = Main.cachedHomeByLang[langId];
         }
 
+        console.log("called    -----> 1  ----------------------->")
+
         if (cached.length) {
           Main.renderHomePage(cached);
-        }else if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
+        } else if (Array.isArray(Main.homePageData) && Main.homePageData.length) {
           var items = Main.homePageData
             .filter(function (x) {
                 return x && x.is_active === true && x.language_uuid === langId;
@@ -692,7 +763,6 @@ function gotoHomeSCreenFromDisconnectPage() {
           }
         } else {
           Main.getHomeData(function () {
-            // utilities.genricPopup("Main.getHomeData(function () { inner", 'info');
             var items2 =
               (Main.cachedHomeByLang && Main.cachedHomeByLang[langId]) || [];
             if (items2.length) Main.renderHomePage(items2);

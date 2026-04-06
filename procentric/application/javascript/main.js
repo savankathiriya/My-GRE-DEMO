@@ -2150,7 +2150,7 @@ Main.castingNewApi = function () {
 Main.deviceActivity = function (actionType, destinationType, name) {
   var data = JSON.stringify({
     action_type: actionType !=null ? String(actionType) : "",
-    destdestination_type: destinationType !=null ? String(destinationType) : "",
+    destination_type: destinationType !=null ? String(destinationType) : "",
     destination: name !=null ? String(name) : "",
   });
 
@@ -2845,7 +2845,7 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
   presentPagedetails.liveTvChannelIdDetails   = channelIdDetails;
   presentPagedetails.liveTvChannelMetaDetails = channelMetaDetails;
 
-  hcap.mode.setHcapMode({
+    hcap.mode.setHcapMode({
                   mode: hcap.mode.HCAP_MODE_1,
                   onSuccess: function () {
                       // utilities.genricPopup("HCAP mode 1 set");
@@ -2856,8 +2856,7 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
                       // utilities.genricPopup(f.errorMessage, 'info');
                   }
               });
-
-  hcap.preloadedApplication.launchPreloadedApplication({
+              hcap.preloadedApplication.launchPreloadedApplication({
                   id: "201712141624040010", // Live TV App ID
                   parameters: "{}",
                   onSuccess: function () {
@@ -2897,6 +2896,18 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
           console.error("Failed to change channel via HCAP:", error);
         }
       });
+
+              hcap.mode.setHcapMode({
+                  mode: hcap.mode.HCAP_MODE_1,
+                  onSuccess: function () {
+                      //  utilities.genricPopup("HCAP mode 1 set");
+                      console.log("HCAP mode 2 set");
+                  },
+                  onFailure: function (f) {
+                      console.log("Failed to set HCAP mode: " + f.errorMessage);
+                      // utilities.genricPopup(f.errorMessage, 'info');
+                  }
+              });
     }
 
     // RF channel with majorNumber-minorNumber format — e.g. "7-7"
@@ -2919,6 +2930,18 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
           console.error("[Live TV] Failed to change RF channel via HCAP:", error);
         }
       });
+
+                  hcap.mode.setHcapMode({
+                      mode: hcap.mode.HCAP_MODE_1,
+                      onSuccess: function () {
+                          //  utilities.genricPopup("HCAP mode 1 set");
+                          console.log("HCAP mode 2 set");
+                      },
+                      onFailure: function (f) {
+                          console.log("Failed to set HCAP mode: " + f.errorMessage);
+                          // utilities.genricPopup(f.errorMessage, 'info');
+                      }
+                  });
     }
 
     // Logical channel number — e.g. "10" or "4"
@@ -2939,7 +2962,7 @@ Main._renderLiveTvPlayer = function (channelIdDetails, channelMetaDetails) {
         }
       });
 
-       hcap.mode.setHcapMode({
+                  hcap.mode.setHcapMode({
                       mode: hcap.mode.HCAP_MODE_1,
                       onSuccess: function () {
                           //  utilities.genricPopup("HCAP mode 1 set");

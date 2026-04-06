@@ -719,49 +719,70 @@ var CanvasAction = (function () {
             textX = el.width / 2;   /* center */
         }
 
-        /* vertical -- textAlignVertical always wins; icon-relative only as fallback */
-        var hasIcon     = el.actionIcon && el.actionIcon.trim() !== '';
+        /* ── Vertical positioning ──────────────────────────────────────────
+         *
+         * Priority order (highest to lowest):
+         *   1. el.textAlignVertical ('top' | 'middle' | 'center' | 'bottom')
+         *      → ALWAYS wins.  Handles the common designer case where the
+         *        card has iconPosition=center but text should be at the bottom.
+         *
+         *   2. Icon-relative positioning (only when textAlignVertical is absent/empty)
+         *      → icon 'top'    → text below the icon
+         *      → icon 'bottom' → text above the icon
+         *      → icon 'left'   → text vertically centered, X shifted right
+         *      → icon 'right'  → text vertically centered, X shifted left
+         *      → icon 'center' → text at bottom (default; icon fills center)
+         *
+         *   3. No icon, no vAlign → vertical center.
+         * ────────────────────────────────────────────────────────────────── */
+        var hasIcon     = !!(el.actionIcon && el.actionIcon.trim() !== '');
         var iconSize    = el.iconSize    || 60;
         var iconSpacing = el.iconSpacing || 12;
         var iconPos     = el.iconPosition || 'top';
+        var vAlign      = (el.textAlignVertical || '').toLowerCase();
         var textY;
 
-        /* Check explicit vertical alignment FIRST -- takes priority over
-           icon-relative positioning so cards with iconPosition=center and
-           textAlignVertical=bottom correctly show text pinned to bottom.  */
-        var vAlign = el.textAlignVertical || '';
-
+        /* Step 1 — explicit textAlignVertical ALWAYS takes priority */
         if (vAlign === 'top') {
             textY = fontSize / 2 + hPad;
+
         } else if (vAlign === 'bottom') {
             textY = el.height - fontSize / 2 - hPad;
+
         } else if (vAlign === 'middle' || vAlign === 'center') {
             textY = el.height / 2;
+
         } else if (hasIcon) {
-            /* No explicit textAlignVertical -- fall back to icon-relative */
+            /* Step 2 — icon-relative fallback (no explicit vAlign) */
             switch (iconPos) {
                 case 'top':
+                    /* icon at top → text below icon */
                     textY = iconSpacing + iconSize + iconSpacing + fontSize / 2;
                     break;
                 case 'bottom':
-                    textY = el.height - iconSize - iconSpacing - fontSize - iconSpacing / 2;
+                    /* icon at bottom → text above icon */
+                    textY = el.height - iconSize - iconSpacing - fontSize / 2 - iconSpacing;
                     break;
                 case 'left':
+                    /* icon on left → text centered vertically, shifted right */
                     ctx.textAlign = 'left';
                     textX = iconSpacing + iconSize + iconSpacing;
                     textY = el.height / 2;
                     break;
                 case 'right':
+                    /* icon on right → text centered vertically, on left side */
                     ctx.textAlign = 'left';
-                    textX = iconSpacing;
+                    textX = hPad;
                     textY = el.height / 2;
                     break;
-                default: /* center */
-                    textY = el.height / 2 + iconSize / 2 + iconSpacing + fontSize / 2;
+                default:
+                    /* icon 'center' → default text to bottom so it doesn't
+                       overlap the centered icon */
+                    textY = el.height - fontSize / 2 - hPad;
                     break;
             }
         } else {
-            /* No icon, no explicit vAlign -- default to vertical center */
+            /* Step 3 — no icon, no vAlign → vertical center */
             textY = el.height / 2;
         }
 
@@ -780,7 +801,9 @@ var CanvasAction = (function () {
         ctx.shadowOffsetY = 0;
         ctx.restore();
 
-        console.log('[CanvasAction] âœ… Text drawn:', el.text);
+        console.log('[CanvasAction] Text drawn:', el.text,
+                    '| textAlign:', textAlign,
+                    '| vAlign:', vAlign || '(icon-relative: ' + iconPos + ')');
     }
 
     /* ================================================================
@@ -800,7 +823,11 @@ var CanvasAction = (function () {
         var container = canvas.parentElement;
         if (!container) return;
 
-        var elKey = String(el.id || el.name || Date.now());
+        /* Use the SAME combined key format as createFocusOverlay so that
+           data-el-key always matches the focusOverlays dictionary key.      */
+        var _rawId   = (el.id   !== undefined && el.id   !== null) ? String(el.id)   : '';
+        var _rawName = (el.name !== undefined && el.name !== null) ? String(el.name) : '';
+        var elKey = _rawId + (_rawName ? ('_' + _rawName) : '') || ('overlay-' + Date.now());
 
         /* Remove any stale overlay for this element */
         var stale = document.querySelector('[data-action-overlay-id="' + elKey + '"]');
@@ -817,6 +844,7 @@ var CanvasAction = (function () {
         /* Outer wrapper: clips border-radius, sets position/size */
         var wrap = document.createElement('div');
         wrap.setAttribute('data-action-overlay-id', elKey);
+        wrap.setAttribute('data-el-key', elKey);
         wrap.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none;margin:0;padding:0;box-sizing:border-box;';
         wrap.style.left         = x + 'px';
         wrap.style.top          = y + 'px';
@@ -868,35 +896,135 @@ var CanvasAction = (function () {
 
         /* Text label overlay */
         if (el.text && el.showTextOverlay !== false) {
+            var _vAlign    = (el.textAlignVertical || '').toLowerCase();
+            var _hAlign    = (el.textAlign         || 'center').toLowerCase();
+            var _hPad      = 12;
+            var _bgOpacity = typeof el.textBackgroundOpacity !== 'undefined' ? el.textBackgroundOpacity : 0;
+
+            /*
+             * textWrap: absolutely positioned band that carries the text.
+             *
+             * Vertical placement — textAlignVertical (PRIORITY):
+             *   'top'            → pinned to top edge
+             *   'middle'/'center'→ pinned to middle via top:50% + translateY(-50%)
+             *   'bottom' or ''   → pinned to bottom edge  (default when absent)
+             *
+             * Horizontal placement — textAlign (via span text-align + wrapper padding):
+             *   'left'   → text flush left  (padding-left applied)
+             *   'right'  → text flush right (padding-right applied)
+             *   'center' → text centered (padding symmetric)
+             */
             var textWrap = document.createElement('div');
-            textWrap.style.cssText = 'position:absolute;left:0;right:0;pointer-events:none;box-sizing:border-box;padding:8px 12px;';
-            var vAlign = el.textAlignVertical || 'bottom';
-            if (vAlign === 'bottom') {
-                textWrap.style.bottom = '0';
-                /* semi-transparent band behind text */
-                var bgOpacity = typeof el.textBackgroundOpacity !== 'undefined' ? el.textBackgroundOpacity : 0;
-                if (bgOpacity > 0) {
-                    textWrap.style.background = 'rgba(0,0,0,' + bgOpacity + ')';
-                }
-            } else if (vAlign === 'top') {
-                textWrap.style.top = '0';
-            } else {
-                textWrap.style.top = '50%';
+            textWrap.style.cssText =
+                'position:absolute;left:0;right:0;pointer-events:none;box-sizing:border-box;';
+
+            /* Vertical */
+            if (_vAlign === 'top') {
+                textWrap.style.top    = '0';
+                textWrap.style.padding = _hPad + 'px ' + _hPad + 'px 4px ' + _hPad + 'px';
+            } else if (_vAlign === 'middle' || _vAlign === 'center') {
+                textWrap.style.top       = '50%';
                 textWrap.style.transform = 'translateY(-50%)';
+                textWrap.style.padding   = '4px ' + _hPad + 'px';
+            } else {
+                /* 'bottom' or not set → default bottom */
+                textWrap.style.bottom  = '0';
+                textWrap.style.padding = '4px ' + _hPad + 'px ' + _hPad + 'px ' + _hPad + 'px';
+                if (_bgOpacity > 0) {
+                    textWrap.style.background = 'rgba(0,0,0,' + _bgOpacity + ')';
+                }
             }
 
             var span = document.createElement('span');
+            span.setAttribute('data-hover-text-span', '1');
+            span.setAttribute('data-orig-text', el.text);
             span.textContent = el.text;
-            span.style.cssText = 'display:block;margin:0;padding:0;';
+            span.style.cssText = 'display:block;margin:0;padding:0;white-space:pre-wrap;word-break:break-word;';
             span.style.fontSize   = (el.fontSize  || 22) + 'px';
             span.style.fontFamily = el.fontFamily || 'Arial';
             span.style.color      = el.color      || '#ffffff';
-            span.style.textAlign  = el.textAlign  || 'center';
+            span.setAttribute('data-orig-color', el.color || '#ffffff');
+            span.style.textAlign  = _hAlign;
             span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
             span.style.lineHeight = '1.2';
 
             textWrap.appendChild(span);
             wrap.appendChild(textWrap);
+        }
+
+        /* ── actionIcon: always-visible icon drawn as DOM img ── */
+        if (el.actionIcon && el.actionIcon.trim() !== '') {
+            var iconImg = document.createElement('img');
+            iconImg.setAttribute('data-action-icon', '1');
+            iconImg.src = el.actionIcon;
+            var _iSz    = el.iconSize    || 60;
+            var _iPos   = el.iconPosition || 'top';
+            var _iPad   = el.iconSpacing  || 12;
+            iconImg.style.cssText     = 'position:absolute;pointer-events:none;display:block;';
+            iconImg.style.width       = _iSz + 'px';
+            iconImg.style.height      = _iSz + 'px';
+            iconImg.style.objectFit   = 'contain';
+            /* position mirrors drawActionIcon() logic */
+            switch (_iPos) {
+                case 'top':
+                    iconImg.style.top  = _iPad + 'px';
+                    iconImg.style.left = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    break;
+                case 'bottom':
+                    iconImg.style.bottom = _iPad + 'px';
+                    iconImg.style.left   = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    break;
+                case 'left':
+                    iconImg.style.left = _iPad + 'px';
+                    iconImg.style.top  = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    break;
+                case 'right':
+                    iconImg.style.right = _iPad + 'px';
+                    iconImg.style.top   = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    break;
+                default: /* center */
+                    iconImg.style.top  = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    iconImg.style.left = 'calc(50% - ' + (_iSz / 2) + 'px)';
+                    break;
+            }
+            wrap.appendChild(iconImg);
+        }
+
+        /* ── hoverIcon: hidden img, shown on focus, same position as actionIcon ── */
+        if (el.hoverIcon && el.hoverIcon.trim() !== '') {
+            var hoverIconImg = document.createElement('img');
+            hoverIconImg.setAttribute('data-hover-icon', '1');
+            hoverIconImg.src = el.hoverIcon;
+            var _hiSz  = el.iconSize    || 60;
+            var _hiPos = el.iconPosition || 'top';
+            var _hiPad = el.iconSpacing  || 12;
+            hoverIconImg.style.cssText   = 'position:absolute;pointer-events:none;display:none;';
+            hoverIconImg.style.width     = _hiSz + 'px';
+            hoverIconImg.style.height    = _hiSz + 'px';
+            hoverIconImg.style.objectFit = 'contain';
+            switch (_hiPos) {
+                case 'top':
+                    hoverIconImg.style.top  = _hiPad + 'px';
+                    hoverIconImg.style.left = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    break;
+                case 'bottom':
+                    hoverIconImg.style.bottom = _hiPad + 'px';
+                    hoverIconImg.style.left   = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    break;
+                case 'left':
+                    hoverIconImg.style.left = _hiPad + 'px';
+                    hoverIconImg.style.top  = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    break;
+                case 'right':
+                    hoverIconImg.style.right = _hiPad + 'px';
+                    hoverIconImg.style.top   = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    break;
+                default:
+                    hoverIconImg.style.top  = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    hoverIconImg.style.left = 'calc(50% - ' + (_hiSz / 2) + 'px)';
+                    break;
+            }
+            wrap.appendChild(hoverIconImg);
         }
 
         if (!container.style.position || container.style.position === 'static') {
@@ -935,7 +1063,10 @@ var CanvasAction = (function () {
         var container = canvas.parentElement;
         if (!container) return;
 
-        var elKey = String(el.id || el.name || Date.now());
+        /* Use the SAME combined key format as createFocusOverlay */
+        var _rawId   = (el.id   !== undefined && el.id   !== null) ? String(el.id)   : '';
+        var _rawName = (el.name !== undefined && el.name !== null) ? String(el.name) : '';
+        var elKey = _rawId + (_rawName ? ('_' + _rawName) : '') || ('btn-' + Date.now());
 
         var stale = document.querySelector('[data-action-btn-id="' + elKey + '"]');
         if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
@@ -950,7 +1081,11 @@ var CanvasAction = (function () {
 
         var wrap = document.createElement('div');
         wrap.setAttribute('data-action-btn-id', elKey);
-        wrap.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none;margin:0;padding:0;box-sizing:border-box;display:flex;align-items:center;justify-content:center;';
+        wrap.setAttribute('data-el-key', elKey);
+        /* NOTE: do NOT set display:flex here — flex forces center/center and
+           overrides textAlign / textAlignVertical.  Use position:absolute
+           children (same approach as createActionDomOverlay) instead.      */
+        wrap.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none;margin:0;padding:0;box-sizing:border-box;';
         wrap.style.left         = x + 'px';
         wrap.style.top          = y + 'px';
         wrap.style.width        = w + 'px';
@@ -976,14 +1111,91 @@ var CanvasAction = (function () {
         }
 
         if (el.text) {
+            var _vAlignBtn = (el.textAlignVertical || '').toLowerCase();
+            var _hAlignBtn = (el.textAlign         || 'center').toLowerCase();
+            var _hPadBtn   = 12;
+            var _bgOpacityBtn = typeof el.textBackgroundOpacity !== 'undefined' ? el.textBackgroundOpacity : 0;
+
+            var textWrapBtn = document.createElement('div');
+            textWrapBtn.style.cssText =
+                'position:absolute;left:0;right:0;pointer-events:none;box-sizing:border-box;';
+
+            /* Vertical placement */
+            if (_vAlignBtn === 'top') {
+                textWrapBtn.style.top     = '0';
+                textWrapBtn.style.padding = _hPadBtn + 'px ' + _hPadBtn + 'px 4px ' + _hPadBtn + 'px';
+            } else if (_vAlignBtn === 'middle' || _vAlignBtn === 'center') {
+                textWrapBtn.style.top       = '50%';
+                textWrapBtn.style.transform = 'translateY(-50%)';
+                textWrapBtn.style.padding   = '4px ' + _hPadBtn + 'px';
+            } else {
+                /* 'bottom' or not set → default bottom */
+                textWrapBtn.style.bottom  = '0';
+                textWrapBtn.style.padding = '4px ' + _hPadBtn + 'px ' + _hPadBtn + 'px ' + _hPadBtn + 'px';
+                if (_bgOpacityBtn > 0) {
+                    textWrapBtn.style.background = 'rgba(0,0,0,' + _bgOpacityBtn + ')';
+                }
+            }
+
             var span = document.createElement('span');
+            span.setAttribute('data-hover-text-span', '1');
+            span.setAttribute('data-orig-text', el.text);
+            span.setAttribute('data-orig-color', el.color || '#ffffff');
             span.textContent   = el.text;
-            span.style.cssText = 'display:block;text-align:center;margin:0;padding:0 8px;word-break:break-word;';
+            span.style.cssText = 'display:block;margin:0;padding:0;white-space:pre-wrap;word-break:break-word;';
             span.style.fontSize   = (el.fontSize  || 22) + 'px';
             span.style.fontFamily = el.fontFamily || 'Arial';
             span.style.color      = el.color      || '#ffffff';
+            span.style.textAlign  = _hAlignBtn;
             span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
-            wrap.appendChild(span);
+            span.style.lineHeight = '1.2';
+
+            textWrapBtn.appendChild(span);
+            wrap.appendChild(textWrapBtn);
+        }
+
+        /* ── actionIcon: always-visible icon ── */
+        if (el.actionIcon && el.actionIcon.trim() !== '') {
+            var iconImg = document.createElement('img');
+            iconImg.setAttribute('data-action-icon', '1');
+            iconImg.src = el.actionIcon;
+            var _iSz    = el.iconSize    || 60;
+            var _iPos   = el.iconPosition || 'center';
+            var _iPad   = el.iconSpacing  || 12;
+            iconImg.style.cssText   = 'position:absolute;pointer-events:none;display:block;';
+            iconImg.style.width     = _iSz + 'px';
+            iconImg.style.height    = _iSz + 'px';
+            iconImg.style.objectFit = 'contain';
+            switch (_iPos) {
+                case 'top':    iconImg.style.top = _iPad + 'px'; iconImg.style.left = 'calc(50% - ' + (_iSz / 2) + 'px)'; break;
+                case 'bottom': iconImg.style.bottom = _iPad + 'px'; iconImg.style.left = 'calc(50% - ' + (_iSz / 2) + 'px)'; break;
+                case 'left':   iconImg.style.left = _iPad + 'px'; iconImg.style.top = 'calc(50% - ' + (_iSz / 2) + 'px)'; break;
+                case 'right':  iconImg.style.right = _iPad + 'px'; iconImg.style.top = 'calc(50% - ' + (_iSz / 2) + 'px)'; break;
+                default:       iconImg.style.top = 'calc(50% - ' + (_iSz / 2) + 'px)'; iconImg.style.left = 'calc(50% - ' + (_iSz / 2) + 'px)'; break;
+            }
+            wrap.appendChild(iconImg);
+        }
+
+        /* ── hoverIcon: hidden, shown on focus ── */
+        if (el.hoverIcon && el.hoverIcon.trim() !== '') {
+            var hoverIconImg = document.createElement('img');
+            hoverIconImg.setAttribute('data-hover-icon', '1');
+            hoverIconImg.src = el.hoverIcon;
+            var _hiSz  = el.iconSize    || 60;
+            var _hiPos = el.iconPosition || 'center';
+            var _hiPad = el.iconSpacing  || 12;
+            hoverIconImg.style.cssText   = 'position:absolute;pointer-events:none;display:none;';
+            hoverIconImg.style.width     = _hiSz + 'px';
+            hoverIconImg.style.height    = _hiSz + 'px';
+            hoverIconImg.style.objectFit = 'contain';
+            switch (_hiPos) {
+                case 'top':    hoverIconImg.style.top = _hiPad + 'px'; hoverIconImg.style.left = 'calc(50% - ' + (_hiSz / 2) + 'px)'; break;
+                case 'bottom': hoverIconImg.style.bottom = _hiPad + 'px'; hoverIconImg.style.left = 'calc(50% - ' + (_hiSz / 2) + 'px)'; break;
+                case 'left':   hoverIconImg.style.left = _hiPad + 'px'; hoverIconImg.style.top = 'calc(50% - ' + (_hiSz / 2) + 'px)'; break;
+                case 'right':  hoverIconImg.style.right = _hiPad + 'px'; hoverIconImg.style.top = 'calc(50% - ' + (_hiSz / 2) + 'px)'; break;
+                default:       hoverIconImg.style.top = 'calc(50% - ' + (_hiSz / 2) + 'px)'; hoverIconImg.style.left = 'calc(50% - ' + (_hiSz / 2) + 'px)'; break;
+            }
+            wrap.appendChild(hoverIconImg);
         }
 
         if (!container.style.position || container.style.position === 'static') {
@@ -1101,7 +1313,7 @@ var CanvasAction = (function () {
         overlay.style.opacity       = '0';
         overlay.style.border        = fbw + 'px solid ' + fbc;
         overlay.style.borderRadius  = br + 'px';
-        overlay.style.boxShadow     = '0 0 24px 4px ' + fbc;
+        overlay.style.boxShadow     = '0 0 2px 2px ' + fbc;
 
         /*
          * ANIMATION-AWARE FOCUS BORDER PLACEMENT
@@ -1236,28 +1448,94 @@ var CanvasAction = (function () {
             if (fid === elementId) {
                 overlay.style.display = 'block';
                 setTimeout(function () { overlay.style.opacity = '1'; }, 10);
+                /* Also apply hover state to the DOM overlay if it already exists */
+                updateFocusOverlays();
                 console.log('[CanvasAction] Default focus border shown for:', elementId);
             }
         }
     }
 
     function updateFocusOverlays() {
+        /* ── 1. hide ALL borders and RESTORE all DOM overlays to default ── */
         for (var id in focusOverlays) {
-            if (focusOverlays.hasOwnProperty(id)) {
-                focusOverlays[id].style.display = 'none';
-                focusOverlays[id].style.opacity = '0';
+            if (!focusOverlays.hasOwnProperty(id)) continue;
+            var _ov = focusOverlays[id];
+            _ov.style.display = 'none';
+            _ov.style.opacity = '0';
+
+            /* Restore DOM overlay that previously had hover applied */
+            var cardWrap = document.querySelector('[data-el-key="' + id + '"]');
+            if (cardWrap && cardWrap._hoverApplied) {
+                /* restore background */
+                cardWrap.style.backgroundColor = cardWrap._origBg || '';
+
+                /* restore text span */
+                var _span = cardWrap.querySelector('[data-hover-text-span]');
+                if (_span) {
+                    _span.textContent = _span.getAttribute('data-orig-text') || '';
+                    _span.style.color = _span.getAttribute('data-orig-color') || '#ffffff';
+                }
+
+                /* restore icons: show actionIcon, hide hoverIcon */
+                var _aIcon = cardWrap.querySelector('[data-action-icon]');
+                if (_aIcon) _aIcon.style.display = 'block';
+                var _hIcon = cardWrap.querySelector('[data-hover-icon]');
+                if (_hIcon) _hIcon.style.display = 'none';
+
+                cardWrap._hoverApplied = false;
             }
         }
-        if (focusedIndex >= 0 && focusedIndex < actionElements.length) {
-            var focused = actionElements[focusedIndex];
-            var _fRawId   = (focused.id   !== undefined && focused.id   !== null) ? String(focused.id)   : '';
-            var _fRawName = (focused.name !== undefined && focused.name !== null) ? String(focused.name) : '';
-            var fid = _fRawId + (_fRawName ? ('_' + _fRawName) : '') || 'action-unknown';
-            var fDiv    = focusOverlays[fid];
-            if (fDiv) {
-                fDiv.style.display = 'block';
-                setTimeout(function () { fDiv.style.opacity = '1'; }, 10);
+
+        /* ── 2. show focused element's border + apply hover state ── */
+        if (focusedIndex < 0 || focusedIndex >= actionElements.length) return;
+
+        var focused   = actionElements[focusedIndex];
+        var _fRawId   = (focused.id   !== undefined && focused.id   !== null) ? String(focused.id)   : '';
+        var _fRawName = (focused.name !== undefined && focused.name !== null) ? String(focused.name) : '';
+        var fid = _fRawId + (_fRawName ? ('_' + _fRawName) : '') || 'action-unknown';
+
+        /* Show border ring */
+        var fDiv = focusOverlays[fid];
+        if (fDiv) {
+            fDiv.style.display = 'block';
+            setTimeout(function () { fDiv.style.opacity = '1'; }, 10);
+        }
+
+        /* Apply hover state to the matching DOM overlay */
+        var cardWrap = document.querySelector('[data-el-key="' + fid + '"]');
+
+        if (cardWrap) {
+            /* Capture original background once */
+            if (cardWrap._origBg === undefined) {
+                cardWrap._origBg = cardWrap.style.backgroundColor || '';
             }
+            cardWrap._hoverApplied = true;
+
+            /* hoverBackgroundColor */
+            if (focused.hoverBackgroundColor) {
+                cardWrap.style.backgroundColor = focused.hoverBackgroundColor;
+            }
+
+            /* hoverText / hoverTextColor */
+            var span = cardWrap.querySelector('[data-hover-text-span]');
+            if (span) {
+                if (focused.hoverText && focused.hoverText.trim() !== '') {
+                    span.textContent = focused.hoverText;
+                }
+                if (focused.hoverTextColor) {
+                    span.style.color = focused.hoverTextColor;
+                }
+            }
+
+            /* hoverIcon: hide actionIcon, show hoverIcon */
+            var aIcon = cardWrap.querySelector('[data-action-icon]');
+            var hIcon = cardWrap.querySelector('[data-hover-icon]');
+            if (hIcon && focused.hoverIcon && focused.hoverIcon.trim() !== '') {
+                if (aIcon) aIcon.style.display = 'none';
+                hIcon.style.display = 'block';
+            }
+
+            console.log('[CanvasAction] Hover state applied:', fid);
         }
     }
 

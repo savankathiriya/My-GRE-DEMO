@@ -225,17 +225,23 @@ Util.homePageHtml = function () {
   var bgImage = Main.getInitialHomeBackgroundUrl();
   var logoImage = Main.cachedPropertyLogo || "/images/logo.png";
   var languageShortCut = "";
-  var iconkey = "langIcon_" + (presentPagedetails.clickedLanguage);
-  var languageIcon = (Main.cachedLanguageIcons && Main.cachedLanguageIcons[iconkey]);
+
+  // presentPagedetails.clickedLanguage gets cleared when addBackData("MyDevice")
+  // resets presentPagedetails = {}. Always fall back to Main.clickedLanguage
+  // which is set once on language selection and never cleared.
+  var _activeLangId = presentPagedetails.clickedLanguage || Main.clickedLanguage || "";
+
+  var iconkey = "langIcon_" + _activeLangId;
+  var languageIcon = (Main.cachedLanguageIcons && Main.cachedLanguageIcons[iconkey]) || "";
   var Text = "";
 
-  for (var i = 0; i <= Main.templateApiData.language_detail.length; i++) {
+  var _langDetail = (Main.templateApiData && Main.templateApiData.language_detail) || [];
+  for (var i = 0; i < _langDetail.length; i++) {
     if (
-      presentPagedetails.clickedLanguage ==
-      Main.templateApiData.language_detail[i].language_uuid
+      _langDetail[i] &&
+      _activeLangId == _langDetail[i].language_uuid
     ) {
-      languageShortCut = Main.templateApiData.language_detail[i].short_code;
-      // languageIcon = Main.templateApiData.language_detail[i].icon;
+      languageShortCut = _langDetail[i].short_code || "";
       break;
     }
   }
@@ -266,8 +272,9 @@ Util.homePageHtml = function () {
   if(resolvedGreeting) {
     Text += '    <span class="greeting">' + resolvedGreeting + "</span>";
   }
+  var _roomNumber = (Main.deviceProfile && typeof Main.deviceProfile === 'object' && Main.deviceProfile.room_number) ? Main.deviceProfile.room_number : "";
   Text +=
-    '    <div class="room-number">' + Main.deviceProfile.room_number + "</div>";
+    '    <div class="room-number">' + _roomNumber + "</div>";
   Text += '    <div id="lang_change_icon" class="language-selector">';
   Text +=
     '      <img src="' + languageIcon + '" alt="EN" class="flag-icon-header">';
@@ -276,12 +283,16 @@ Util.homePageHtml = function () {
   Text += "  </div>";
 
   // Weather and Time Section
+  var _weather = (Main.weatherDetails && Main.weatherDetails.current) ? Main.weatherDetails.current : null;
+  var _weatherIcon = (_weather && _weather.condition && _weather.condition.icon) ? _weather.condition.icon : null;
+  var _weatherTemp = (_weather && _weather.temp_c !== undefined) ? _weather.temp_c : "";
+
   Text += '<div class="time-weather-section">';
   Text += '  <div class="weather-info">';
-  if(Main.weatherDetails.current.condition.icon){
+  if(_weatherIcon){
     Text +=
     '<img src="' +
-    Main.weatherDetails.current.condition.icon +
+    _weatherIcon +
     '" alt="Weather" class="weather-icon" ' +
     'onerror="this.onerror=null;this.src=\'' + cloudyImage + '\';">';
   }else {
@@ -290,7 +301,7 @@ Util.homePageHtml = function () {
   
   Text +=
     '    <span class="temperature">' +
-    Main.weatherDetails.current.temp_c +
+    _weatherTemp +
     "°C</span>";
   Text += "  </div>";
   Text += '  <div class="time-info">';
