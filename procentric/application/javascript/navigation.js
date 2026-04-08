@@ -612,11 +612,11 @@ Navigation.homePageNavigation = function (event) {
         Main.liveTvChannelIdApi(comingfromWatchTvApp)
       }
       else if (appUrl === "OurHotel") {
-        checkNetworkAndLaunch("Our Hotel", function () {
+        // checkNetworkAndLaunch("Our Hotel", function () {
           Main.deviceActivity("close","page","Home screen");
           Main.deviceActivity("open","page",source);
           Main.jsontemplateApi(app_url);
-        })
+        // })
       }
       else if (appUrl === "Playlist") {
         checkNetworkAndLaunch("Playlist", function () {

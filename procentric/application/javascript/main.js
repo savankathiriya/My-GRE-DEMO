@@ -702,6 +702,15 @@ Main.guestInfo = function (callback) {
       if (result.status === true) {
         Main.guestInfoData = result.result;
         guestName = result.result.g_name ? result.result.g_name : null;
+      } else {
+          Main.logTvException({
+            error_type:    "API_ERROR",
+            error_code:    "GUEST_INFO_FETCH_FAILED",
+            error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch guest info API",
+            error_source:  "Main.guestInfo",
+            module:        "guest_info",
+            action:        "fetch_guest_info"
+        });
       }
 
       if (typeof callback === "function") {
@@ -824,13 +833,14 @@ Main.startStatusHeartbeat = function () {
 
   console.log("[StatusHeartbeat] Starting status heartbeat every " + interval + "s");
 
-  function _sendStatusPayload() {
+  function _buildAndSendPayload(screenStatus) {
     if (typeof idcap === "undefined" || !idcap.request) {
       var payload = {
         cmd: "get_status",
         response: {
           app_status: "Online",
           cmd_status: true,
+          screen_status: screenStatus ? screenStatus : "",
           device_network_ip: deviceIp ? deviceIp : "",
           sr_no: deviceSerialNumber ? deviceSerialNumber : "",
           mac_address: deviceMac ? deviceMac : "",
@@ -870,6 +880,7 @@ Main.startStatusHeartbeat = function () {
           response: {
             app_status: "Online",
             cmd_status: true,
+            screen_status: screenStatus ? screenStatus : "",
             device_network_ip: deviceIp ? deviceIp : "",
             sr_no: deviceSerialNumber ? deviceSerialNumber : "",
             mac_address: deviceMac ? deviceMac : "",
@@ -888,6 +899,7 @@ Main.startStatusHeartbeat = function () {
           response: {
             app_status: "Online",
             cmd_status: true,
+            screen_status: screenStatus ? screenStatus : "",
             device_network_ip: deviceIp ? deviceIp : "",
             sr_no: deviceSerialNumber ? deviceSerialNumber : "",
             mac_address: deviceMac ? deviceMac : "",
@@ -900,6 +912,26 @@ Main.startStatusHeartbeat = function () {
     });
   }
 
+  // ✅ Entry point — always resolve screenStatus first, then build payload
+  function _sendStatusPayload() {
+    try {
+      hcap.power.getPowerMode({
+        onSuccess: function (s) {
+          var cur = s && s.mode;
+          var screenStatus = (cur !== hcap.power.PowerMode.WARM) ? 'on' : 'off';
+          _buildAndSendPayload(screenStatus);
+        },
+        onFailure: function (f) {
+          console.warn("[StatusHeartbeat] getPowerMode failed:", f && f.errorMessage);
+          _buildAndSendPayload(null); // proceed anyway
+        }
+      });
+    } catch (e) {
+      console.warn("[StatusHeartbeat] getPowerMode exception:", e);
+      _buildAndSendPayload(null); // proceed anyway
+    }
+  }
+
   function sendInfoToBackend(payload) {
     macro.ajax({
       url: apiPrefixUrl + "device-mqtt-cmd",
@@ -910,11 +942,21 @@ Main.startStatusHeartbeat = function () {
         Authorization: "Bearer " + pageDetails.access_token,
       },
       success: function(res) {
-        console.log("Status info sent successfully:", res);
+        console.log("[StatusHeartbeat] Status info sent successfully:", res);
+        var result = typeof res === 'string' ? JSON.parse(res) : res;
+        if (result.status === false) {
+          Main.logTvException({
+            error_type:    "API_ERROR",
+            error_code:    "STATUS_HEARTBEAT_SEND_FAILED",
+            error_message:  result.message ? JSON.stringify(result.message) : "Failed to send status info (API returned false)",
+            error_source:  "Main.statusHeartbeat",
+            module:        "status_heartbeat",
+            action:        "send_status_payload"
+          });
+        }
       },
       error: function(err) {
-        console.error("Failed to send status info:", err);
-
+        console.error("[StatusHeartbeat] Failed to send status info:", err);
         Main.logTvException({
           error_type:    "API_ERROR",
           error_code:    "STATUS_HEARTBEAT_SEND_FAILED",
@@ -923,14 +965,14 @@ Main.startStatusHeartbeat = function () {
           module:        "status_heartbeat",
           action:        "send_status_payload",
           extra_data: {
-            status_code:  err && err.status  ? err.status  : undefined,
-            status_text:  err && err.statusText ? err.statusText : undefined,
+            status_code:   err && err.status      ? err.status      : undefined,
+            status_text:   err && err.statusText  ? err.statusText  : undefined,
             response_text: err && err.responseText ? err.responseText : undefined
           }
         });
       },
       timeout: 60000
-    })
+    });
   }
 
   setInterval(function () {
@@ -1001,6 +1043,15 @@ Main.screenSaverInterval = function () {
         if (!(result && result.status === true &&
               Array.isArray(result.result) && result.result.length)) {
           console.warn('[ScreenSaverInit] API returned no data — screen saver disabled');
+
+          Main.logTvException({
+            error_type:    "API_ERROR",
+            error_code:    "SCREEN_SAVER_FETCH_FAILED",
+            error_message: result.message ? JSON.stringify(result.message) : "Failed to fetch screen saver info API",
+            error_source:  "Main.screenSaver",
+            module:        "screen_saver",
+            action:        "fetch_screen_saver_info"
+          });
           return;
         }
 
@@ -1325,7 +1376,16 @@ Main.getTemplateApiData = function (comingFromHomeLang) {
 					}
 					// ─────────────────────────────────────────────────────────────────────
 				});
-			}
+			}else {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "TEMPLATE_API_FETCH_FAILED",
+          error_message: result.message ? JSON.stringify(result.message) : "Failed to fetch template info API",
+          error_source:  "Main.templateApi",
+          module:        "template_api",
+          action:        "fetch_template_info"
+        });
+      }
 		},
 		error: function (errObj) {
 			console.error("Template API error:", errObj);
@@ -1594,7 +1654,16 @@ Main.deviceProfileApi = function (callback) {
           }, 2000);
           // ===== MQTT INTEGRATION END =====
         }
-			}
+			}else {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "DEVICE_PROFILE_FETCH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch device profile API",
+          error_source:  "Main.deviceProfile",
+          module:        "device_profile",
+          action:        "fetch_device_profile"
+        });
+      }
 
 			if(typeof callback === "function") {
 				callback();
@@ -2162,7 +2231,21 @@ Main.deviceActivity = function (actionType, destinationType, name) {
     headers: {
       Authorization: "Bearer " + (pageDetails && pageDetails.access_token ? pageDetails.access_token : "")
     },
-    success: function (data) {
+    success: function (response) {
+      var result = typeof response === "string" ? JSON.parse(response) : response;
+
+      console.log("Device Activity API success:-------------------------->", result);
+
+      if(result.status !== true) {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "DEVICE_ACTIVITY_API_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch device activity data API",
+          error_source:  "Main.deviceActivity",
+          module:        "device_activity",
+          action:        "fetch_device_activity_data",
+        });
+      }
       // No action needed on success
     },
     error: function (err) {
@@ -2280,6 +2363,17 @@ Main.updateDeviceDetailsSendApi = function () {
         success: function (response) {
           var result = typeof response === "string" ? JSON.parse(response) : response;
           console.log('[Device Details] API Success:', result);
+
+          if(result.status !== true) {
+            Main.logTvException({
+              error_type:    "API_ERROR",
+              error_code:    "DEVICE_PROFILE_FETCH_FAILED",
+              error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch device profile API",
+              error_source:  "Main.deviceProfile",
+              module:        "device_profile",
+              action:        "fetch_device_profile"
+            });
+          }
         },
         error: function (err) {
           console.error('[Device Details] API Error:', err);
@@ -2503,6 +2597,14 @@ Main.prefetchAllChannelData = function () {
                 Main.channelListUpdatingFiveMinutes();
               }, 30 * 60 * 1000);
             } else {
+              Main.logTvException({
+                error_type:    "API_ERROR",
+                error_code:    "CHANNEL_FEED_API_FETCH_FAILED",
+                error_message:  r2.message ? JSON.stringify(r2.message) : "Failed to fetch channel-feed data API",
+                error_source:  "Main.channelFeedApi",
+                module:        "channel",
+                action:        "fetch_channel_feed_data"
+              });
               console.warn('[Prefetch] channel-feed returned no data');
             }
           },
@@ -2531,6 +2633,15 @@ Main.prefetchAllChannelData = function () {
         });
       } else {
         console.warn('[Prefetch] channel returned no data');
+
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "CHANNEL_API_FETCH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch channel data API",
+          error_source:  "Main.channelApi",
+          module:        "channel",
+          action:        "fetch_channel_data"
+        });
         // Fallback from localStorage
         try {
           var cachedId = localStorage.getItem('liveTvChannelIdDetails');
@@ -2592,6 +2703,15 @@ Main.lgLgChannelIdApi = function (comingfromWatchTvApp) {
       }else {
         // Main.HideLoading();
         _hideCanvasLineLoader();
+
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "LG_CHANNEL_API_FETCH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch lg-channel data API",
+          error_source:  "Main.lgLgChannelApi",
+          module:        "channel",
+          action:        "fetch_lgLgChannel_data"
+        });
       }
     },
     error: function (err) {
@@ -2693,6 +2813,15 @@ Main.lgLgChannelApiMetaData = function (comingfromWatchTvApp, channelIdDetails) 
             );
           }, 10000);
         }
+      }else {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "LG_CHANNEL_FEED_API_FETCH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch channel-feed data API",
+          error_source:  "Main.lgLgChannelApi",
+          module:        "channel",
+          action:        "fetch_lgLgChannel_data"
+        });
       }
       // Main.HideLoading();
       _hideCanvasLineLoader();
@@ -2732,6 +2861,15 @@ Main.lgLgChannelListUpdatingFiveMinutes = function () {
 
       if(result.status === true) {
         presentPagedetails.lgLgChannelMetaDetails = result.result;
+      }else {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "LG_CHANNEL_FEED_REFRESH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch channel-feed data API",
+          error_source:  "Main.lgLgChannelApi",
+          module:        "channel",
+          action:        "fetch_lgLgChannel_data"
+        });
       }
     },
     error: function (err) {
@@ -3236,6 +3374,15 @@ Main.channelListUpdatingFiveMinutes = function () {
         var filteredMeta = Main._filterAndSortLiveTvMeta(result.result);
         presentPagedetails.liveTvChannelMetaDetails = filteredMeta;
         try { localStorage.setItem('liveTvChannelMetaDetails', JSON.stringify(result.result)); } catch(e) {}
+      }else {
+        Main.logTvException({
+          error_type:    "API_ERROR",
+          error_code:    "CHANNEL_FEED_REFRESH_FAILED",
+          error_message:  result.message ? JSON.stringify(result.message) : "Failed to fetch channel-feed data API",
+          error_source:  "Main.liveTvChannelApiMetaData",
+          module:        "channel",
+          action:        "fetch_channel_feed_data"
+        });
       }
     },
     error: function (err) {

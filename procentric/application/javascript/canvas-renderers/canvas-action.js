@@ -787,18 +787,18 @@ var CanvasAction = (function () {
         }
 
         /* shadow for readability over images / video */
-        var si = el.textShadowIntensity || 0.7;
-        ctx.shadowColor   = 'rgba(0,0,0,' + si + ')';
-        ctx.shadowBlur    = 8;
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 2;
+        // var si = el.textShadowIntensity || 0.7;
+        // ctx.shadowColor   = 'rgba(0,0,0,' + si + ')';
+        // ctx.shadowBlur    = 8;
+        // ctx.shadowOffsetX = 2;
+        // ctx.shadowOffsetY = 2;
 
         ctx.fillText(el.text, textX, textY);
 
-        ctx.shadowColor   = 'transparent';
-        ctx.shadowBlur    = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
+        // ctx.shadowColor   = 'transparent';
+        // ctx.shadowBlur    = 0;
+        // ctx.shadowOffsetX = 0;
+        // ctx.shadowOffsetY = 0;
         ctx.restore();
 
         console.log('[CanvasAction] Text drawn:', el.text,
@@ -945,7 +945,7 @@ var CanvasAction = (function () {
             span.style.color      = el.color      || '#ffffff';
             span.setAttribute('data-orig-color', el.color || '#ffffff');
             span.style.textAlign  = _hAlign;
-            span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
+            // span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
             span.style.lineHeight = '1.2';
 
             textWrap.appendChild(span);
@@ -1147,7 +1147,7 @@ var CanvasAction = (function () {
             span.style.fontFamily = el.fontFamily || 'Arial';
             span.style.color      = el.color      || '#ffffff';
             span.style.textAlign  = _hAlignBtn;
-            span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
+            // span.style.textShadow = '2px 2px 8px rgba(0,0,0,' + (el.textShadowIntensity || 0.7) + ')';
             span.style.lineHeight = '1.2';
 
             textWrapBtn.appendChild(span);

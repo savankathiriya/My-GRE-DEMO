@@ -82,7 +82,7 @@ var CanvasImage = (function () {
         var h       = Math.ceil(el.height  || 0);
         var radius  = el.borderRadius || 0;
         var opacity = typeof el.opacity !== 'undefined' ? el.opacity : 1;
-        var fit     = el.objectFit || 'cover';
+        var fit     = el.objectFit || 'contain';
         var zIndex  = (el.zIndex != null && el.zIndex !== 'auto' && el.zIndex !== 0)
                       ? parseInt(el.zIndex, 10) || 10
                       : 10;

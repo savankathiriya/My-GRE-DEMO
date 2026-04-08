@@ -141,7 +141,7 @@ var CanvasScaler = (function() {
 
         // Scale borders and radii
         if (typeof element.borderWidth !== 'undefined') {
-            scaled.borderWidth = Math.max(1, Math.round(element.borderWidth * fontScale));
+            scaled.borderWidth = Math.max(0, Math.round(element.borderWidth * fontScale));
         }
         if (typeof element.borderRadius !== 'undefined') {
             scaled.borderRadius = Math.round(element.borderRadius * fontScale);

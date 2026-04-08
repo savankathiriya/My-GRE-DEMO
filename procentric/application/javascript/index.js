@@ -1,7 +1,7 @@
 var app = {}
 var macro = jQuery.noConflict();
 var appConfig = {
-	appVersion:"v1.870"
+	appVersion:"v1.950"
 };
 var loadFilePaths = 'macrotv.json';
 var apiPrefixUrl = "https://tvapi.guestxp.com/app/";
@@ -22,10 +22,10 @@ var tvKeyCode = {
 	Exit: 1001,
 	Guide: 458
 };
-var deviceMac = null;
-// var deviceMac = '1cf43ff843b4';
-var deviceSerialNumber = null;
-// var deviceSerialNumber = '507kklpk6504';
+// var deviceMac = null;
+var deviceMac = '1cf43ff843b4';
+// var deviceSerialNumber = null;
+var deviceSerialNumber = '507kklpk6504';
 var deviceModelName = "";
 var lastNetworkType = "";
 var deviceIp  = null;
@@ -1160,64 +1160,87 @@ function handleMqttCommand(cmd, data, topic) {
 
   function mqtt_sendStatusInfo(data) {
 
-    if(typeof idcap === "undefined" || !idcap.request) {
-      var payload = {
-        cmd: data.cmd,
-        response: {
-          app_status: "Online",
-          cmd_status: true,
-          device_network_ip: deviceIp ? deviceIp : "",
-          sr_no: deviceSerialNumber ? deviceSerialNumber : "",
-          mac_address: deviceMac ? deviceMac : "",
-          screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
-        },
-        seq: data.seq
-      }
+    function buildAndSendPayload(screenStatus) {
+      console.log("Screen status determined as:------------------>", screenStatus);
 
-      sendInfoToBackend(payload);
-      return;
-    }
-
-    idcap.request("idcap://network/configuration/get", {
-      parameters: {},
-      onSuccess: function (cbObject) {
-        var wired = cbObject && cbObject.wired ? cbObject.wired : {};
-        var wifi  = cbObject && cbObject.wifi  ? cbObject.wifi  : {};
-
-        var networkInfo = {
-          wired: {
-            mac: wired.mac || "",
-            state: wired.state || "",
-            ipAddress: wired.ipAddress || "",
-            onInternet: wired.onInternet || "",
-            plugged: (wired.plugged === true || wired.plugged === false) ? wired.plugged : ""
-          },
-          wifi: {
-            mac: wifi.mac || "",
-            state: wifi.state || "",
-            ipAddress: wifi.ipAddress || "",
-            onInternet: wifi.onInternet || "",
-            ssid: wifi.ssid || ""
-          }
-        };
-
+      if (typeof idcap === "undefined" || !idcap.request) {
         var payload = {
           cmd: data.cmd,
           response: {
             app_status: "Online",
             cmd_status: true,
+            screen_status: screenStatus ? screenStatus : "",
             device_network_ip: deviceIp ? deviceIp : "",
             sr_no: deviceSerialNumber ? deviceSerialNumber : "",
             mac_address: deviceMac ? deviceMac : "",
             screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
-            network_info: networkInfo
           },
           seq: data.seq
-        }
-
+        };
         sendInfoToBackend(payload);
+        return;
       }
-    })
+
+      idcap.request("idcap://network/configuration/get", {
+        parameters: {},
+        onSuccess: function(cbObject) {
+          var wired = cbObject && cbObject.wired ? cbObject.wired : {};
+          var wifi  = cbObject && cbObject.wifi  ? cbObject.wifi  : {};
+
+          var networkInfo = {
+            wired: {
+              mac: wired.mac || "",
+              state: wired.state || "",
+              ipAddress: wired.ipAddress || "",
+              onInternet: wired.onInternet || "",
+              plugged: (wired.plugged === true || wired.plugged === false) ? wired.plugged : ""
+            },
+            wifi: {
+              mac: wifi.mac || "",
+              state: wifi.state || "",
+              ipAddress: wifi.ipAddress || "",
+              onInternet: wifi.onInternet || "",
+              ssid: wifi.ssid || ""
+            }
+          };
+
+          var payload = {
+            cmd: data.cmd,
+            response: {
+              app_status: "Online",
+              cmd_status: true,
+              screen_status: screenStatus ? screenStatus : "",
+              device_network_ip: deviceIp ? deviceIp : "",
+              sr_no: deviceSerialNumber ? deviceSerialNumber : "",
+              mac_address: deviceMac ? deviceMac : "",
+              screen_saver_status: (typeof ScreenSaver !== 'undefined' && ScreenSaver.isActive()) ? "active" : "inactive",
+              network_info: networkInfo
+            },
+            seq: data.seq
+          };
+
+          sendInfoToBackend(payload);
+        }
+      });
+    }
+
+    // ✅ All downstream logic now waits for getPowerMode to complete
+    try {
+      hcap.power.getPowerMode({
+        onSuccess: function(s) {
+          var cur = s && s.mode;
+          var screenStatus = (cur !== hcap.power.PowerMode.WARM) ? 'on' : 'off';
+          buildAndSendPayload(screenStatus);
+        },
+        onFailure: function(f) {
+          console.warn("getPowerMode failed while fetching screen status:", f && f.errorMessage);
+          buildAndSendPayload(null); // send payload anyway with null status
+        }
+      });
+    } catch(e) {
+      console.warn("getPowerMode exception:", e);
+      buildAndSendPayload(null); // send payload anyway with null status
+    }
   }
 
   function sendInfoToBackend(payload) {
@@ -1231,6 +1254,16 @@ function handleMqttCommand(cmd, data, topic) {
       },
       success: function(res) {
         console.log("Status info sent successfully:", res);
+        var result = typeof res === "string" ? JSON.parse(res) : res;
+        if(result.status === false) {
+          Main.logTvException({
+            error_type:    "API_ERROR",
+            error_code:    "MQTT_CMD_POST_FAILED",
+            error_message:  result.message ? JSON.stringify(result.message) : "Failed to send MQTT command",
+            error_source:  "sendInfoToBackend",
+            module:        "mqtt_command_handler"
+          });
+        }
       },
       error: function(err) {
         console.error("Failed to send status info:", err);
